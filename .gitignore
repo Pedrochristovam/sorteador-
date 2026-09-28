@@ -1,0 +1,8 @@
+.env
+.env.local
+mocks/empresas.php
+storage/*.json
+storage/fluxo_*.json
+storage/cookie.txt
+!storage/.gitkeep
+!storage/.gitignore

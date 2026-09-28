@@ -1,0 +1,53 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'atividades' => [
+        'A' => 'Laudo Simplificado',
+        'B' => 'Laudo Completo',
+        'C' => 'Laudo Rural',
+        'D' => 'Levantamento Topográfico',
+        'E' => 'Georreferenciamento',
+        'F' => 'Vistoria de Obra',
+    ],
+    'regioesMunicipios' => [
+        'I' => 'Central (MG)',
+        'II' => 'Zona da Mata (MG)',
+        'III' => 'Sul de Minas',
+        'IV' => 'Triângulo (MG)',
+        'V' => 'Alto Paranaíba (MG)',
+        'VI' => 'Centro Oeste (MG)',
+        'VII' => 'Noroeste de Minas',
+        'VIII' => 'Norte de Minas',
+        'IX' => 'Jequitinhonha/Mucuri',
+        'X' => 'Rio Doce (MG)',
+    ],
+    'estadosAtuacao' => [
+        'XI' => 'Acre',
+        'XII' => 'Amazonas',
+        'XIII' => 'Rondônia',
+        'XIV' => 'Amapá',
+        'XV' => 'Pará',
+        'XVI' => 'Maranhão',
+        'XVII' => 'Piauí',
+        'XVIII' => 'Ceará',
+        'XIX' => 'Rio Grande do Norte',
+        'XX' => 'Paraíba',
+        'XXI' => 'Pernambuco',
+        'XXII' => 'Alagoas',
+        'XXIII' => 'Sergipe',
+        'XXIV' => 'Bahia',
+        'XXV' => 'Espírito Santo',
+        'XXVI' => 'Rio de Janeiro',
+        'XXVII' => 'São Paulo',
+        'XXVIII' => 'Paraná',
+        'XXIX' => 'Santa Catarina',
+        'XXX' => 'Rio Grande do Sul',
+        'XXXI' => 'Mato Grosso do Sul',
+        'XXXII' => 'Mato Grosso',
+        'XXXIII' => 'Goiás/Distrito Federal',
+        'XXXIV' => 'Tocantins',
+        'XXXV' => 'Roraima',
+    ],
+];

@@ -1,0 +1,158 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Histórico mockado de sorteios realizados.
+ */
+
+return [
+    [
+        'id' => 'SRT-20260310-A1B2C3',
+        'dataHora' => '2026-03-10 14:32:00',
+        'demanda' => [
+            'cidade' => 'São Paulo',
+            'endereco' => 'Av. Paulista, 1000 — Bela Vista',
+            'tipoDemanda' => 'Serviço contínuo',
+            'servicoNecessario' => 'TI',
+            'criteriosAdicionais' => ['convenio_ativo', 'localizacao'],
+            'raioMaximoKm' => 30,
+        ],
+        'participantes' => [
+            ['id' => 'EMP-001', 'nome' => 'TechSol Soluções Digitais Ltda'],
+            ['id' => 'EMP-008', 'nome' => 'DataNet Telecomunicações S.A.'],
+        ],
+        'empresaSelecionada' => [
+            'id' => 'EMP-001',
+            'nome' => 'TechSol Soluções Digitais Ltda',
+            'cnpj' => '12.345.678/0001-90',
+            'cidade' => 'São Paulo',
+            'endereco' => 'Av. Paulista, 1578',
+        ],
+        'status' => 'concluido',
+        'usuarioId' => 'USR-001',
+        'usuarioNome' => 'Operador Demo',
+        'criteriosUtilizados' => ['Serviço compatível', 'Convênio ativo', 'Critério de localização'],
+        'totalAnalisadas' => 12,
+        'totalEliminadas' => 10,
+        'totalElegiveis' => 2,
+    ],
+    [
+        'id' => 'SRT-20260305-D4E5F6',
+        'dataHora' => '2026-03-05 09:15:00',
+        'demanda' => [
+            'cidade' => 'São Paulo',
+            'endereco' => 'Rua Augusta, 500 — Consolação',
+            'tipoDemanda' => 'Emergencial',
+            'servicoNecessario' => 'Limpeza',
+            'criteriosAdicionais' => ['convenio_ativo'],
+            'raioMaximoKm' => 25,
+        ],
+        'participantes' => [
+            ['id' => 'EMP-002', 'nome' => 'Norte Manutenção Predial S.A.'],
+            ['id' => 'EMP-007', 'nome' => 'CleanPro Serviços Ambientais'],
+        ],
+        'empresaSelecionada' => [
+            'id' => 'EMP-007',
+            'nome' => 'CleanPro Serviços Ambientais',
+            'cnpj' => '78.901.234/0001-56',
+            'cidade' => 'São Paulo',
+            'endereco' => 'Av. Brigadeiro Faria Lima, 1800',
+        ],
+        'status' => 'concluido',
+        'usuarioId' => 'USR-001',
+        'usuarioNome' => 'Operador Demo',
+        'criteriosUtilizados' => ['Serviço compatível', 'Convênio ativo', 'Critério de localização'],
+        'totalAnalisadas' => 12,
+        'totalEliminadas' => 10,
+        'totalElegiveis' => 2,
+    ],
+    [
+        'id' => 'SRT-20260220-G7H8I9',
+        'dataHora' => '2026-02-20 16:45:00',
+        'demanda' => [
+            'cidade' => 'Guarulhos',
+            'endereco' => 'Av. Salgado Filho, 1200',
+            'tipoDemanda' => 'Serviço contínuo',
+            'servicoNecessario' => 'Segurança',
+            'criteriosAdicionais' => ['convenio_ativo', 'localizacao'],
+            'raioMaximoKm' => 40,
+        ],
+        'participantes' => [
+            ['id' => 'EMP-005', 'nome' => 'Segurança Alfa Vigilância'],
+            ['id' => 'EMP-010', 'nome' => 'Prime Segurança Corporativa'],
+        ],
+        'empresaSelecionada' => [
+            'id' => 'EMP-010',
+            'nome' => 'Prime Segurança Corporativa',
+            'cnpj' => '01.234.567/0001-89',
+            'cidade' => 'Guarulhos',
+            'endereco' => 'Av. Monteiro Lobato, 4550',
+        ],
+        'status' => 'concluido',
+        'usuarioId' => 'USR-001',
+        'usuarioNome' => 'Operador Demo',
+        'criteriosUtilizados' => ['Serviço compatível', 'Convênio ativo', 'Critério de localização'],
+        'totalAnalisadas' => 12,
+        'totalEliminadas' => 10,
+        'totalElegiveis' => 2,
+    ],
+    [
+        'id' => 'SRT-20260210-J1K2L3',
+        'dataHora' => '2026-02-10 11:00:00',
+        'demanda' => [
+            'cidade' => 'Campinas',
+            'endereco' => 'Rua Barão de Jaguara, 200',
+            'tipoDemanda' => 'Pontual',
+            'servicoNecessario' => 'Saúde Ocupacional',
+            'criteriosAdicionais' => ['convenio_ativo'],
+            'raioMaximoKm' => 50,
+        ],
+        'participantes' => [
+            ['id' => 'EMP-003', 'nome' => 'Vida Saúde Assistência Médica'],
+        ],
+        'empresaSelecionada' => [
+            'id' => 'EMP-003',
+            'nome' => 'Vida Saúde Assistência Médica',
+            'cnpj' => '34.567.890/0001-12',
+            'cidade' => 'Campinas',
+            'endereco' => 'Av. Norte-Sul, 450',
+        ],
+        'status' => 'concluido',
+        'usuarioId' => 'USR-001',
+        'usuarioNome' => 'Operador Demo',
+        'criteriosUtilizados' => ['Serviço compatível', 'Convênio ativo', 'Critério de localização'],
+        'totalAnalisadas' => 12,
+        'totalEliminadas' => 11,
+        'totalElegiveis' => 1,
+    ],
+    [
+        'id' => 'SRT-20260128-M4N5O6',
+        'dataHora' => '2026-01-28 15:20:00',
+        'demanda' => [
+            'cidade' => 'São Paulo',
+            'endereco' => 'Av. Rebouças, 3000',
+            'tipoDemanda' => 'Serviço contínuo',
+            'servicoNecessario' => 'Engenharia',
+            'criteriosAdicionais' => ['convenio_ativo', 'localizacao'],
+            'raioMaximoKm' => 35,
+        ],
+        'participantes' => [
+            ['id' => 'EMP-011', 'nome' => 'Sul Engenharia e Projetos'],
+        ],
+        'empresaSelecionada' => [
+            'id' => 'EMP-011',
+            'nome' => 'Sul Engenharia e Projetos',
+            'cnpj' => '11.222.333/0001-44',
+            'cidade' => 'São Paulo',
+            'endereco' => 'Av. Ipiranga, 200',
+        ],
+        'status' => 'concluido',
+        'usuarioId' => 'USR-001',
+        'usuarioNome' => 'Operador Demo',
+        'criteriosUtilizados' => ['Serviço compatível', 'Convênio ativo', 'Critério de localização'],
+        'totalAnalisadas' => 12,
+        'totalEliminadas' => 11,
+        'totalElegiveis' => 1,
+    ],
+];
