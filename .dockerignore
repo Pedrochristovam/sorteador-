@@ -1,0 +1,11 @@
+.git
+.env
+.env.local
+storage/*.json
+storage/backup-*
+storage/telas
+storage/fluxo_*
+storage/cookie.txt
+mocks/empresas.php
+*.md
+!README.md

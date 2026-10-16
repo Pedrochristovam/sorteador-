@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "sh scripts/start.sh"
+healthcheckPath = "/index.php?page=dashboard"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"

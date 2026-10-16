@@ -10,9 +10,7 @@ Sistema web corporativo para seleção transparente de empresas conveniadas.
 - MySQL 8 (opcional — sem as tabelas, os dados ficam em JSON em `storage/`)
 - Rotas de carro: OpenStreetMap/OSRM ou Google Maps (chave no `.env`)
 
-## Como executar
-
-Na pasta do projeto:
+## Como executar (local)
 
 ```bash
 php -S localhost:8080
@@ -20,7 +18,32 @@ php -S localhost:8080
 
 Acesse: http://localhost:8080
 
-## Banco de dados
+## Deploy no Railway
+
+1. No [Railway](https://railway.app), crie um projeto e conecte o repositório GitHub `Pedrochristovam/sorteador-`.
+2. Adicione um banco **MySQL** no mesmo projeto (`+ New` → `Database` → `MySQL`).
+3. No serviço da **aplicação**, em **Variables**, configure:
+
+```
+DB_ENABLED=true
+DB_HOST=${{MySQL.MYSQLHOST}}
+DB_PORT=${{MySQL.MYSQLPORT}}
+DB_NAME=${{MySQL.MYSQLDATABASE}}
+DB_USER=${{MySQL.MYSQLUSER}}
+DB_PASS=${{MySQL.MYSQLPASSWORD}}
+```
+
+(O nome `MySQL` no `${{MySQL....}}` deve ser igual ao nome do serviço do banco no canvas.)
+
+4. Em **Settings** → **Networking**, gere um domínio público (`Generate Domain`).
+5. Faça o deploy. Na primeira subida o container:
+   - aplica os schemas
+   - importa empresas/sociedades de exemplo (só se o banco estiver vazio)
+   - sobe o PHP na porta que o Railway definir
+
+Arquivos de deploy: `Dockerfile`, `railway.toml`, `scripts/start.sh`, `database/setup_railway.php`.
+
+## Banco de dados (local)
 
 1. Copie `.env.example` para `.env` e preencha usuário/senha do MySQL.
 2. Crie as tabelas e importe os dados:
