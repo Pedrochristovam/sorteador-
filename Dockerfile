@@ -16,8 +16,6 @@ RUN chmod +x scripts/start.sh \
     && mkdir -p storage \
     && chmod -R 775 storage
 
-ENV DB_ENABLED=true
-
 EXPOSE 8080
 
 CMD ["sh", "scripts/start.sh"]

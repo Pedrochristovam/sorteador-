@@ -47,8 +47,10 @@ for ($i = 1; $i <= 30; $i++) {
     }
 }
 if (!$pdo instanceof PDO) {
-    fwrite(STDERR, "Não conectou ao MySQL: {$ultimoErro}\n");
-    exit(1);
+    fwrite(STDERR, "AVISO: não conectou ao MySQL após 30 tentativas: {$ultimoErro}\n");
+    fwrite(STDERR, "Confira se o plugin MySQL existe e se as Variables DB_HOST/DB_USER/DB_PASS estão corretas.\n");
+    // Sai com 0 para o container ainda subir o PHP (evita 502 no Railway).
+    exit(0);
 }
 
 $aplicarSql = static function (PDO $pdo, string $arquivo): void {
