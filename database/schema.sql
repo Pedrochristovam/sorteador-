@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS empresa_regioes (
 CREATE TABLE IF NOT EXISTS sorteios (
   id VARCHAR(40) PRIMARY KEY,
   data_hora DATETIME NOT NULL,
-  status ENUM('concluido','cancelado','em_andamento','aguardando_orcamento') NOT NULL DEFAULT 'concluido',
+  status ENUM('concluido','cancelado','em_andamento','aguardando_orcamento','aguardando_aceite','recusado') NOT NULL DEFAULT 'concluido',
   usuario_id VARCHAR(40) NULL,
   usuario_nome VARCHAR(160) NULL,
   demanda_cidade VARCHAR(120) NOT NULL,

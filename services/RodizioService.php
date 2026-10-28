@@ -7,10 +7,9 @@ require_once __DIR__ . '/DrawService.php';
 /**
  * Controle das chamadas (rodízio geral).
  *
- * Toda credenciada chamada (sorteada, escolhida por proximidade ou sorteada para orçamento)
- * fica fora dos próximos sorteios até que todas as credenciadas ativas tenham sido chamadas.
- * Quando todas foram chamadas, o ciclo recomeça.
- * Só contam sorteios feitos pelo motor atual (registros com "rodizioIds").
+ * A empresa só entra no rodízio depois de ACEITAR a demanda (aba Standby).
+ * Recusa ou aceite pendente não contam — a credenciada segue apta aos próximos sorteios.
+ * Quando todas as ativas tiverem aceitado ao menos uma demanda no ciclo, o ciclo recomeça.
  */
 final class RodizioService
 {
@@ -26,7 +25,10 @@ final class RodizioService
     {
         $historico = array_values(array_filter(
             $this->drawService->listHistorico(),
-            static fn(array $s): bool => isset($s['rodizioIds']) && is_array($s['rodizioIds'])
+            static function (array $s): bool {
+                $ids = $s['rodizioIds'] ?? null;
+                return is_array($ids) && $ids !== [] && ($s['status'] ?? '') === 'concluido';
+            }
         ));
         usort($historico, static fn(array $a, array $b): int => strcmp((string) $a['dataHora'], (string) $b['dataHora']));
 

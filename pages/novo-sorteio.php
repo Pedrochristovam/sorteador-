@@ -445,7 +445,11 @@ $pageScripts = ['assets/js/sorteio.js'];
                   <strong><?= e(format_km($emp['distanciaKm'] ?? null)) ?></strong>
                   <?php if (!empty($emp['duracaoMin'])): ?><small class="muted">· ~<?= (int) $emp['duracaoMin'] ?> min</small><?php endif; ?>
                   <?php if (($emp['distanciaPrecisao'] ?? '') === 'cidade'): ?><small class="muted" title="Endereço não localizado com precisão; rota calculada a partir do centro da cidade"> (centro da cidade)</small><?php endif; ?>
-                  <?php if (($emp['distanciaFonte'] ?? '') === 'estimativa'): ?><small class="muted"> (estimativa)</small><?php endif; ?>
+                  <?php if (($emp['distanciaKm'] ?? null) === null): ?>
+                    <small class="muted"> (sem rota de carro)</small>
+                  <?php elseif (in_array($emp['distanciaFonte'] ?? '', ['google', 'osm'], true)): ?>
+                    <small class="muted"> · carro<?= ($emp['distanciaFonte'] ?? '') === 'google' ? ' · Google' : ' · OSM' ?></small>
+                  <?php endif; ?>
                 </td>
                 <td><?= e(format_km($emp['idaVoltaKm'] ?? null)) ?><?= empty($emp['atendeAcima100km']) ? ' <span class="tag tag-km-limite">≤ 100 km</span>' : '' ?></td>
                 <td>

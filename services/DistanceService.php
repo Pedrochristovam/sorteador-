@@ -5,18 +5,24 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/config/Database.php';
 
 /**
- * Distância por rota de carro entre as empresas e o endereço da demanda.
+ * Distância por ROTA DE CARRO entre as empresas e o endereço da demanda.
  *
- * Provedores:
- *   - google : Google Maps Distance Matrix (GOOGLE_MAPS_API_KEY no .env)
- *   - osm    : OpenStreetMap (Nominatim para geocodificar + OSRM para a rota), sem chave
- * Se a rota falhar, usa estimativa (linha reta × 1,3) marcada como "estimativa".
- * Geocodificações e rotas ficam em cache em storage/geo_cache.json.
+ * Nunca usa linha reta (haversine) para decidir elegibilidade, ranking ou limite de 100 km.
+ * Só entram no sistema distâncias vindas de:
+ *   - google : Google Maps Distance Matrix com mode=driving (GOOGLE_MAPS_API_KEY no .env)
+ *   - osm    : OpenStreetMap Nominatim (geocode) + OSRM profile=driving (sem chave)
+ * Se a rota de carro falhar, km fica null (indisponível) — a empresa não é ranqueada por
+ * proximidade e o limite de 100 km não a elimina por estimativa.
+ * Cache em storage/geo_cache.json (somente rotas google/osm são gravadas).
  */
 final class DistanceService
 {
     private const USER_AGENT = 'SorteadorMGI/1.0 (sorteador de credenciados)';
-    private const FATOR_ESTIMATIVA = 1.3;
+    /** Endpoints OSRM públicos (profile driving = malha viária de carro). */
+    private const OSRM_TABLE = [
+        'https://router.project-osrm.org/table/v1/driving/',
+        'https://routing.openstreetmap.de/routed-car/table/v1/driving/',
+    ];
 
     private string $cachePath;
     private ?array $cache = null;
@@ -42,9 +48,16 @@ final class DistanceService
         return match ($fonte ?? $this->provider()) {
             'google' => 'Google Maps (rota de carro)',
             'osm' => 'OpenStreetMap (rota de carro)',
-            'estimativa' => 'Estimativa (linha reta × 1,3)',
-            default => 'Indisponível',
+            'estimativa' => 'Inválida — linha reta (não usada)',
+            default => 'Rota de carro indisponível',
         };
+    }
+
+    /** True só se a distância veio de rota de carro real (Google driving ou OSRM driving). */
+    public static function isRotaCarro(?array $rota): bool
+    {
+        $fonte = $rota['fonte'] ?? '';
+        return in_array($fonte, ['google', 'osm'], true) && isset($rota['km']) && $rota['km'] !== null;
     }
 
     /**
@@ -79,12 +92,23 @@ final class DistanceService
                 : $this->rotasOsm($destino, $pendentes);
 
             foreach ($novos as $id => $rota) {
+                // Descarta qualquer residual de estimativa/linha reta (cache antigo ou fallback legado)
+                if (!self::isRotaCarro($rota) && ($rota['fonte'] ?? '') === 'estimativa') {
+                    $rota = ['km' => null, 'minutos' => null, 'fonte' => 'indisponivel', 'precisao' => $rota['precisao'] ?? 'sem_rota_carro'];
+                }
                 $resultado[$id] = $rota;
-                if ($rota['km'] !== null && $rota['fonte'] !== 'estimativa') {
+                if (self::isRotaCarro($rota)) {
                     $this->cacheSet('rotas', $provider . '|' . $this->chave($pendentes[$id]) . '>' . $destKey, $rota);
                 }
             }
             $this->salvarCache();
+        }
+
+        // Garante: o que sai daqui ou é rota de carro, ou km null
+        foreach ($resultado as $id => $rota) {
+            if (($rota['km'] ?? null) !== null && !self::isRotaCarro($rota)) {
+                $resultado[$id] = ['km' => null, 'minutos' => null, 'fonte' => 'indisponivel', 'precisao' => 'sem_rota_carro'];
+            }
         }
 
         return $resultado;
@@ -153,6 +177,7 @@ final class DistanceService
                         'minutos' => round(((float) $el['duration']['value']) / 60),
                         'fonte' => 'google',
                         'precisao' => 'endereco',
+                        'modo' => 'driving',
                     ];
                 } else {
                     $out += $this->rotasOsm($destino, [$id => $lote[$id]]);
@@ -197,28 +222,37 @@ final class DistanceService
                 $pontos[] = sprintf('%.6f,%.6f', $geo['lng'], $geo['lat']);
             }
             $sources = implode(';', range(1, count($lote)));
-            $url = 'https://router.project-osrm.org/table/v1/driving/' . implode(';', $pontos)
-                . '?sources=' . $sources . '&destinations=0&annotations=distance,duration';
-            $json = $this->httpJson($url);
+            $query = implode(';', $pontos) . '?sources=' . $sources . '&destinations=0&annotations=distance,duration';
+
+            $json = null;
+            foreach (self::OSRM_TABLE as $base) {
+                $json = $this->httpJson($base . $query);
+                if (($json['code'] ?? '') === 'Ok') {
+                    break;
+                }
+            }
             $ok = ($json['code'] ?? '') === 'Ok';
 
             foreach ($ids as $i => $id) {
                 $metros = $ok ? ($json['distances'][$i][0] ?? null) : null;
                 $segundos = $ok ? ($json['durations'][$i][0] ?? null) : null;
                 $precisao = self::piorPrecisao($lote[$id]['precisao'], $dest['precisao']);
-                if ($metros !== null) {
+                if ($metros !== null && (float) $metros >= 0) {
                     $out[$id] = [
                         'km' => round(((float) $metros) / 1000, 1),
                         'minutos' => $segundos !== null ? round(((float) $segundos) / 60) : null,
                         'fonte' => 'osm',
                         'precisao' => $precisao,
+                        'modo' => 'driving',
                     ];
                 } else {
+                    // Sem rota de carro: NÃO inventa km por linha reta
                     $out[$id] = [
-                        'km' => round($this->haversineKm($lote[$id]['lat'], $lote[$id]['lng'], $dest['lat'], $dest['lng']) * self::FATOR_ESTIMATIVA, 1),
+                        'km' => null,
                         'minutos' => null,
-                        'fonte' => 'estimativa',
+                        'fonte' => 'indisponivel',
                         'precisao' => $precisao,
+                        'modo' => 'driving',
                     ];
                 }
             }
@@ -332,18 +366,15 @@ final class DistanceService
         return is_array($json) ? $json : null;
     }
 
-    private function haversineKm(float $lat1, float $lon1, float $lat2, float $lon2): float
-    {
-        $dLat = deg2rad($lat2 - $lat1);
-        $dLon = deg2rad($lon2 - $lon1);
-        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) ** 2;
-        return 6371.0 * 2 * atan2(sqrt($a), sqrt(1 - $a));
-    }
-
     private function cacheGet(string $grupo, string $key): ?array
     {
         $this->carregarCache();
-        return $this->cache[$grupo][$key] ?? null;
+        $hit = $this->cache[$grupo][$key] ?? null;
+        // Ignora entradas antigas de estimativa (linha reta) — força novo cálculo por rota de carro
+        if ($grupo === 'rotas' && is_array($hit) && ($hit['fonte'] ?? '') === 'estimativa') {
+            return null;
+        }
+        return $hit;
     }
 
     private function cacheSet(string $grupo, string $key, array $valor): void

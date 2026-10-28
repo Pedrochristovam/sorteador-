@@ -107,6 +107,16 @@ try {
     // tabela pode não ter sido criada ainda em falha parcial
 }
 
+try {
+    $pdo->exec(
+        "ALTER TABLE sorteios MODIFY status ENUM(
+            'concluido','cancelado','em_andamento','aguardando_orcamento','aguardando_aceite','recusado'
+        ) NOT NULL DEFAULT 'concluido'"
+    );
+} catch (Throwable) {
+    // already applied / table missing
+}
+
 echo "==> Schema Jurídico\n";
 if (!$temTabela($pdo, 'sociedades_advogados')) {
     $aplicarSql($pdo, "$root/database/schema_juridico.sql");

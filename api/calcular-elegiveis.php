@@ -79,7 +79,10 @@ $contar = static function (array $lista, string $codigo): int {
 
 $eliminadas = $resultado['eliminadas'];
 $elegiveis = $resultado['elegiveis'];
-$comRota = array_values(array_filter($elegiveis, static fn(array $e): bool => $e['distanciaKm'] !== null));
+$comRota = array_values(array_filter(
+    $elegiveis,
+    static fn(array $e): bool => $e['distanciaKm'] !== null && in_array($e['distanciaFonte'] ?? '', ['google', 'osm'], true)
+));
 $maisProxima = $comRota[0] ?? null;
 
 json_response([

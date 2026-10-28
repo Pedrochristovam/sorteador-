@@ -52,7 +52,9 @@ final class DrawService
 
         $selecionada = $execucao['selecionada'];
         $sorteadas = $execucao['sorteadas'];
-        $status = $modalidade === 'orcamento' ? 'aguardando_orcamento' : 'concluido';
+        // Rodízio só conta depois do aceite na aba Standby. Até lá rodizioIds fica vazio.
+        $status = $modalidade === 'orcamento' ? 'aguardando_orcamento' : 'aguardando_aceite';
+        $propostos = $execucao['rodizioIds'];
 
         $payloadIntegridade = json_encode([
             'sorteioId' => $sorteioId,
@@ -106,8 +108,10 @@ final class DrawService
             'sorteadas' => $sorteadas,
             'orcamentos' => [],
             'ranking' => $execucao['ranking'],
-            'rodizioIds' => $execucao['rodizioIds'],
+            'rodizioIds' => [],
+            'rodizioPropostos' => $propostos,
             'rodizioNota' => $execucao['nota'],
+            'aceiteStatus' => $modalidade === 'orcamento' ? null : 'pendente',
             'hashIntegridade' => $hash,
             'seedReferencia' => 'seed:' . $seed,
             'modoSorteio' => 'csprng',
@@ -159,7 +163,12 @@ final class DrawService
     /** @param list<array> $elegiveis */
     private function escolherMaisProxima(array $elegiveis): array
     {
-        $comRota = array_values(array_filter($elegiveis, static fn(array $e): bool => ($e['distanciaKm'] ?? null) !== null));
+        // Só considera distâncias de rota de carro (Google driving / OSRM driving)
+        $comRota = array_values(array_filter(
+            $elegiveis,
+            static fn(array $e): bool => ($e['distanciaKm'] ?? null) !== null
+                && in_array($e['distanciaFonte'] ?? '', ['google', 'osm'], true)
+        ));
         if ($comRota === []) {
             throw new RuntimeException('Não foi possível apurar a rota de carro de nenhuma credenciada. Confira o endereço da demanda e tente de novo.');
         }
@@ -258,10 +267,69 @@ final class DrawService
         $sorteio['orcamentoEmpate'] = count($empatadas) > 1;
         $sorteio['orcamentoRegistradoEm'] = date('Y-m-d H:i:s');
         $sorteio['empresaSelecionada'] = $selecionada + ['valor' => $menor];
-        $sorteio['status'] = 'concluido';
+        $sorteio['status'] = 'aguardando_aceite';
+        $sorteio['aceiteStatus'] = 'pendente';
+        $sorteio['rodizioPropostos'] = [(string) $selecionada['id']];
+        $sorteio['rodizioIds'] = [];
 
         $this->atualizarSorteio($sorteio);
         return $sorteio;
+    }
+
+    /**
+     * Confirma se a empresa sorteada aceitou ou recusou a demanda.
+     * Só no aceite a empresa entra no rodízio (fica de fora dos próximos até o ciclo fechar).
+     *
+     * @param 'aceito'|'recusado' $decisao
+     */
+    public function registrarAceite(string $sorteioId, string $decisao, string $observacao = ''): array
+    {
+        $decisao = strtolower(trim($decisao));
+        if (!in_array($decisao, ['aceito', 'recusado'], true)) {
+            throw new InvalidArgumentException('Informe se a empresa aceitou ou recusou o serviço.');
+        }
+
+        $sorteio = $this->findById($sorteioId);
+        if ($sorteio === null) {
+            throw new InvalidArgumentException('Sorteio não encontrado.');
+        }
+        if (($sorteio['status'] ?? '') !== 'aguardando_aceite') {
+            throw new InvalidArgumentException('Este sorteio não está aguardando confirmação de aceite.');
+        }
+        if (empty($sorteio['empresaSelecionada']['id'])) {
+            throw new InvalidArgumentException('Não há empresa selecionada para confirmar o aceite.');
+        }
+
+        $empresaId = (string) $sorteio['empresaSelecionada']['id'];
+        $agora = date('Y-m-d H:i:s');
+        $sorteio['aceiteStatus'] = $decisao;
+        $sorteio['aceiteEm'] = $agora;
+        $sorteio['aceiteObservacao'] = trim($observacao);
+        $sorteio['aceiteUsuario'] = (string) (current_user()['nome'] ?? '');
+
+        if ($decisao === 'aceito') {
+            $propostos = $sorteio['rodizioPropostos'] ?? [];
+            if (!is_array($propostos) || $propostos === []) {
+                $propostos = [$empresaId];
+            }
+            $sorteio['rodizioIds'] = array_values(array_unique(array_map('strval', $propostos)));
+            $sorteio['status'] = 'concluido';
+        } else {
+            $sorteio['rodizioIds'] = [];
+            $sorteio['status'] = 'recusado';
+        }
+
+        $this->atualizarSorteio($sorteio);
+        return $sorteio;
+    }
+
+    /** Sorteios aguardando aceite/recusa da empresa (aba Standby). */
+    public function listStandby(): array
+    {
+        return array_values(array_filter(
+            $this->listHistorico(),
+            static fn(array $s): bool => ($s['status'] ?? '') === 'aguardando_aceite'
+        ));
     }
 
     /** @param list<array> $itens */
@@ -320,12 +388,8 @@ final class DrawService
     public function persistirSessao(array $sorteio, array $meta = []): void
     {
         if ($this->dbEnabled()) {
-            try {
-                $this->persistirDb($sorteio, $meta);
-                return;
-            } catch (Throwable) {
-                // fallback arquivo
-            }
+            $this->persistirDb($sorteio, $meta);
+            return;
         }
 
         $path = $this->sessionPath();
@@ -443,8 +507,9 @@ final class DrawService
         }
 
         $extras = array_intersect_key($sorteio, array_flip([
-            'modalidade', 'modalidadeMotivo', 'sorteadas', 'orcamentos', 'ranking', 'rodizioIds', 'rodizioNota',
+            'modalidade', 'modalidadeMotivo', 'sorteadas', 'orcamentos', 'ranking', 'rodizioIds', 'rodizioPropostos', 'rodizioNota',
             'seedReferencia', 'orcamentoObservacao', 'orcamentoEmpate', 'orcamentoRegistradoEm',
+            'aceiteStatus', 'aceiteEm', 'aceiteObservacao', 'aceiteUsuario',
         ]));
 
         $stmt = $pdo->prepare(

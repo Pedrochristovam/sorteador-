@@ -110,6 +110,9 @@ $aptidao = $totalEmpresas > 0 ? round(($empresasAtivas / $totalEmpresas) * 100, 
             <?php
               $statusSel = (string) ($s['status'] ?? 'concluido');
               $nomeSel = $s['empresaSelecionada']['nome'] ?? ($statusSel === 'aguardando_orcamento' ? 'Aguardando orçamentos (3 sorteadas)' : '—');
+              if ($statusSel === 'aguardando_aceite' && !empty($s['empresaSelecionada']['nome'])) {
+                  $nomeSel = $s['empresaSelecionada']['nome'] . ' (standby)';
+              }
               $cnpjSel = $s['empresaSelecionada']['cnpj'] ?? '';
               $dt = $s['dataHora'] ?? '';
               $dataPart = $dt !== '' ? format_date($dt, 'd/m/Y') : '—';
@@ -154,7 +157,7 @@ $aptidao = $totalEmpresas > 0 ? round(($empresasAtivas / $totalEmpresas) * 100, 
                 </div>
               </td>
               <td>
-                <span class="status-pill <?= $statusSel === 'aguardando_orcamento' ? 'warning' : 'success' ?>">
+                <span class="status-pill <?= in_array($statusSel, ['aguardando_orcamento', 'aguardando_aceite'], true) ? 'warning' : ($statusSel === 'recusado' ? 'danger' : 'success') ?>">
                   <span class="dot"></span> <?= e(status_sorteio_label($statusSel)) ?>
                 </span>
               </td>

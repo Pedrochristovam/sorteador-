@@ -124,6 +124,11 @@ try {
     $r = http('POST', "$base/api/calcular-elegiveis.php", $demandaBase + ['preview' => true]);
     $imp = $r['json']['impacto'] ?? [];
     ok(($r['json']['ok'] ?? false) === true, sprintf('preview em %.1fs · %d aptas de %d · fonte: %s', microtime(true) - $t, $imp['elegiveis'] ?? -1, $imp['total'] ?? -1, $imp['fonteDistancia'] ?? '?'));
+    $fonte = strtolower((string) ($imp['fonteDistancia'] ?? ''));
+    ok(
+        str_contains($fonte, 'google') || str_contains($fonte, 'openstreetmap') || str_contains($fonte, 'rota de carro'),
+        'distância é rota de carro (não linha reta): ' . ($imp['fonteDistancia'] ?? '?')
+    );
     ok(($imp['modalidade'] ?? '') === 'sorteio', 'modalidade sugerida = sorteio (' . ($imp['modalidadeMotivo'] ?? '') . ')');
     echo "         desativadas {$imp['desativadas']} · sem atividade {$imp['semAtividade']} · fora da região {$imp['foraRegiao']} · limite 100km {$imp['limite100']} · na cidade {$imp['aptasNaCidade']} · mais próxima: " . ($imp['maisProxima']['nome'] ?? '-') . ' ' . ($imp['maisProxima']['km'] ?? '') . " km" . PHP_EOL;
 
@@ -134,6 +139,11 @@ try {
     $ordenado = $kms;
     sort($ordenado);
     ok($kms === $ordenado, 'aptas ordenadas pela rota de carro');
+    $fontesRuins = array_filter(
+        $dados['elegiveis'] ?? [],
+        static fn(array $e): bool => ($e['distanciaKm'] ?? null) !== null && !in_array($e['distanciaFonte'] ?? '', ['google', 'osm'], true)
+    );
+    ok($fontesRuins === [], 'nenhuma apta com km que não seja rota de carro (google/osm)');
     $semRegiao = array_filter($dados['elegiveis'] ?? [], static function ($e) use ($empresas, $regiao) {
         foreach ($empresas as $emp) {
             if ($emp['id'] === $e['empresaId']) {
@@ -153,8 +163,9 @@ try {
     $r = http('POST', "$base/api/realizar-sorteio.php", ['confirmado' => true]);
     $s1 = $r['json']['data']['sorteio'] ?? [];
     ok(($r['json']['ok'] ?? false) && !empty($s1['empresaSelecionada']['id']), 'sorteio executado → ' . ($s1['empresaSelecionada']['nome'] ?? $r['body']));
-    ok(($s1['status'] ?? '') === 'concluido' && ($s1['rodizioIds'] ?? []) === [$s1['empresaSelecionada']['id'] ?? ''], 'status concluído e sorteada entra no rodízio');
+    ok(($s1['status'] ?? '') === 'aguardando_aceite' && ($s1['rodizioIds'] ?? []) === [], 'fica em standby: aguardando aceite, ainda fora do rodízio');
     pagina('resultado (sorteio)', "$base/index.php?page=novo-sorteio&etapa=resultado");
+    pagina('standby com pendente', "$base/index.php?page=standby");
 
     $r = http('POST', "$base/api/calcular-elegiveis.php", $demandaBase);
     $flag = null;
@@ -163,11 +174,26 @@ try {
             $flag = !empty($e['emRodizio']);
         }
     }
-    ok($flag === true, 'na demanda seguinte a sorteada aparece como "já chamada" (rodízio)');
+    ok($flag === false, 'antes do aceite a sorteada ainda NÃO está no rodízio');
+
+    $r = http('POST', "$base/api/registrar-aceite.php", ['sorteioId' => $s1['id'] ?? '', 'decisao' => 'aceito', 'observacao' => 'teste']);
+    $s1a = $r['json']['data'] ?? [];
+    ok(($r['json']['ok'] ?? false) && ($s1a['status'] ?? '') === 'concluido' && ($s1a['rodizioIds'] ?? []) === [$s1['empresaSelecionada']['id'] ?? ''], 'aceite confirma e coloca no rodízio');
+
+    $r = http('POST', "$base/api/calcular-elegiveis.php", $demandaBase);
+    $flag = null;
+    foreach ($r['json']['data']['elegiveis'] ?? [] as $e) {
+        if ($e['empresaId'] === ($s1['empresaSelecionada']['id'] ?? '')) {
+            $flag = !empty($e['emRodizio']);
+        }
+    }
+    ok($flag === true, 'depois do aceite a sorteada aparece como "já chamada" (rodízio)');
     $r = http('POST', "$base/api/realizar-sorteio.php", ['confirmado' => true]);
     $s2 = $r['json']['data']['sorteio'] ?? [];
     $nLivres = count(array_filter($r['json']['data']['sorteio']['participantes'] ?? [], static fn($p) => empty($p['emRodizio'])));
-    ok(($s2['empresaSelecionada']['id'] ?? '') !== ($s1['empresaSelecionada']['id'] ?? '') || $nLivres === 0, '2º sorteio não repete a empresa já chamada → ' . ($s2['empresaSelecionada']['nome'] ?? '?'));
+    ok(($s2['empresaSelecionada']['id'] ?? '') !== ($s1['empresaSelecionada']['id'] ?? '') || $nLivres === 0, '2º sorteio não repete a empresa já aceita → ' . ($s2['empresaSelecionada']['nome'] ?? '?'));
+    // Confirma o 2º também (senão fica pendente no standby)
+    http('POST', "$base/api/registrar-aceite.php", ['sorteioId' => $s2['id'] ?? '', 'decisao' => 'aceito']);
 
     // ---------- 3. mais próxima ----------
     echo PHP_EOL . "3. Laudo com preço em edital → mais próxima" . PHP_EOL;
@@ -177,7 +203,9 @@ try {
     $r = http('POST', "$base/api/realizar-sorteio.php", ['confirmado' => true]);
     $s3 = $r['json']['data']['sorteio'] ?? [];
     ok(($s3['empresaSelecionada']['id'] ?? '') === ($primeira['empresaId'] ?? '-'), sprintf('escolhida a mais próxima: %s (%s km)', $s3['empresaSelecionada']['nome'] ?? '?', $s3['empresaSelecionada']['distanciaKm'] ?? '?'));
+    ok(($s3['status'] ?? '') === 'aguardando_aceite', 'mais próxima também vai para standby');
     ok(count($s3['ranking'] ?? []) > 0, 'ranking de distâncias registrado (' . count($s3['ranking'] ?? []) . ')');
+    http('POST', "$base/api/registrar-aceite.php", ['sorteioId' => $s3['id'] ?? '', 'decisao' => 'aceito']);
     pagina('resultado (mais próxima)', "$base/index.php?page=novo-sorteio&etapa=resultado");
 
     // ---------- 4. orçamento ----------
@@ -201,10 +229,30 @@ try {
     $s4b = $r['json']['data'] ?? $r['json']['sorteio'] ?? [];
     ok(($r['json']['ok'] ?? false) === true, 'orçamentos registrados' . (($r['json']['ok'] ?? false) ? '' : ' → ' . $r['body']));
     $venc = $s4b['empresaSelecionada']['id'] ?? null;
-    ok($venc === ($ids[1] ?? '-') && ($s4b['status'] ?? '') === 'concluido', 'menor valor (R$ 3.150) venceu e sorteio concluído');
+    ok($venc === ($ids[1] ?? '-') && ($s4b['status'] ?? '') === 'aguardando_aceite', 'menor valor (R$ 3.150) venceu e vai para standby');
+    $r = http('POST', "$base/api/registrar-aceite.php", ['sorteioId' => $s4['id'] ?? '', 'decisao' => 'aceito']);
+    ok(($r['json']['data']['status'] ?? '') === 'concluido', 'aceite da vencedora do orçamento conclui o sorteio');
     pagina('resultado (orçamentos registrados)', "$base/index.php?page=resultado&id=" . urlencode($s4['id'] ?? ''));
     pagina('histórico detalhe (orçamento)', "$base/index.php?page=historico-detalhe&id=" . urlencode($s4['id'] ?? ''));
     pagina('auditoria (orçamento)', "$base/index.php?page=auditoria&sorteio=" . urlencode($s4['id'] ?? ''));
+
+    // Recusa libera a empresa no próximo sorteio
+    echo PHP_EOL . "4b. Recusa libera a empresa no rodízio" . PHP_EOL;
+    $r = http('POST', "$base/api/calcular-elegiveis.php", $demandaBase);
+    $r = http('POST', "$base/api/realizar-sorteio.php", ['confirmado' => true]);
+    $sRec = $r['json']['data']['sorteio'] ?? [];
+    $idRec = $sRec['empresaSelecionada']['id'] ?? '';
+    ok(($sRec['status'] ?? '') === 'aguardando_aceite' && $idRec !== '', 'sorteio para teste de recusa → ' . ($sRec['empresaSelecionada']['nome'] ?? '?'));
+    $r = http('POST', "$base/api/registrar-aceite.php", ['sorteioId' => $sRec['id'] ?? '', 'decisao' => 'recusado', 'observacao' => 'teste recusa']);
+    ok(($r['json']['data']['status'] ?? '') === 'recusado' && ($r['json']['data']['rodizioIds'] ?? null) === [], 'recusa não coloca no rodízio');
+    $r = http('POST', "$base/api/calcular-elegiveis.php", $demandaBase);
+    $aindaLivre = null;
+    foreach ($r['json']['data']['elegiveis'] ?? [] as $e) {
+        if ($e['empresaId'] === $idRec) {
+            $aindaLivre = empty($e['emRodizio']);
+        }
+    }
+    ok($aindaLivre === true, 'empresa que recusou continua livre no próximo sorteio');
 
     // atividade C (Laudo Rural) também vai para orçamento
     $r = http('POST', "$base/api/calcular-elegiveis.php", ['preview' => true, 'atividadesCodigos' => ['C']] + $demandaBase);

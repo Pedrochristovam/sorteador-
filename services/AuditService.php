@@ -14,7 +14,7 @@ final class AuditService
 {
     private const CAMPOS_EXTRAS = [
         'modalidade', 'modalidadeMotivo', 'sorteadas', 'ranking', 'rodizioNota', 'distancia', 'orcamentos',
-        'execucaoLog', 'checksumAlgoritmo', 'sintetico',
+        'execucaoLog', 'checksumAlgoritmo', 'sintetico', 'aceiteStatus', 'rodizioIds',
     ];
 
     /** @return list<array> */

@@ -5,7 +5,7 @@ $sid = $embeddedSorteioId;
 $registro = $sid !== '' ? (new DrawService())->findById($sid) : null;
 $r = $embeddedResultado;
 if (is_array($registro)) {
-    foreach (['modalidade', 'modalidadeMotivo', 'sorteadas', 'orcamentos', 'ranking', 'rodizioNota', 'status', 'empresaSelecionada', 'hashIntegridade', 'orcamentoEmpate', 'orcamentoObservacao'] as $k) {
+    foreach (['modalidade', 'modalidadeMotivo', 'sorteadas', 'orcamentos', 'ranking', 'rodizioNota', 'status', 'empresaSelecionada', 'hashIntegridade', 'orcamentoEmpate', 'orcamentoObservacao', 'aceiteStatus'] as $k) {
         if (array_key_exists($k, $registro)) {
             $r[$k] = $registro[$k];
         }
@@ -15,6 +15,8 @@ $empresa = $r['empresaSelecionada'] ?? [];
 $demanda = $r['demanda'] ?? [];
 $modalidade = (string) ($r['modalidade'] ?? '');
 $aguardandoOrcamento = ($r['status'] ?? '') === 'aguardando_orcamento';
+$aguardandoAceite = ($r['status'] ?? '') === 'aguardando_aceite';
+$recusado = ($r['status'] ?? '') === 'recusado';
 
 // Contatos atualizados das sorteadas (para pedir orçamento)
 $contatos = [];
@@ -54,7 +56,22 @@ if (!empty($r['sorteadas'])) {
         <span class="lbl">Situação</span>
         <span class="val"><span class="badge badge-warning">Aguardando orçamentos</span></span>
       </div>
-    <?php else: ?>
+    <?php elseif ($aguardandoAceite): ?>
+      <div class="result-row">
+        <span class="lbl">Situação</span>
+        <span class="val">
+          <span class="badge badge-warning">Aguardando aceite</span>
+          <small class="result-note">Confirme na aba <a href="<?= e(page_url('standby')) ?>">Standby</a> se a empresa aceitou ou recusou. Só no aceite ela entra no rodízio.</small>
+        </span>
+      </div>
+    <?php elseif ($recusado): ?>
+      <div class="result-row">
+        <span class="lbl">Situação</span>
+        <span class="val"><span class="badge badge-danger">Recusado pela empresa</span></span>
+      </div>
+    <?php endif; ?>
+
+    <?php if (!$aguardandoOrcamento): ?>
       <div class="result-row">
         <span class="lbl"><?= $modalidade === 'orcamento' ? 'Vencedora (menor orçamento)' : 'Empresa selecionada' ?></span>
         <span class="val">

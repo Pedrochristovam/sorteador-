@@ -270,7 +270,7 @@ $periodoLabel = match ($filters['periodo']) {
               $id = (string) ($s['id'] ?? '');
               $seed = integrity_hash_for($id . '|' . ($s['dataHora'] ?? ''));
               $sel = $s['empresaSelecionada'] ?? null;
-              $aguardando = ($s['status'] ?? '') === 'aguardando_orcamento';
+              $aguardando = in_array(($s['status'] ?? ''), ['aguardando_orcamento', 'aguardando_aceite'], true);
               $selNome = (string) ($sel['nome'] ?? ($aguardando ? 'Aguardando orçamentos' : '—'));
               $selCnpj = (string) ($sel['cnpj'] ?? '');
               $selId = (string) ($sel['id'] ?? $selNome);

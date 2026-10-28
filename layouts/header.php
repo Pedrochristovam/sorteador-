@@ -14,6 +14,7 @@ if ($isJuridico) {
         ['page' => 'dashboard', 'label' => 'Visão geral', 'icon' => 'layout-dashboard'],
         ['page' => 'empresas', 'label' => 'Empresas', 'icon' => 'building-2'],
         ['page' => 'historico', 'label' => 'Histórico', 'icon' => 'history'],
+        ['page' => 'standby', 'label' => 'Standby', 'icon' => 'hourglass'],
         ['page' => 'auditoria', 'label' => 'Auditoria', 'icon' => 'shield-check'],
         ['page' => 'novo-sorteio', 'label' => 'Novo Sorteio', 'icon' => 'shuffle', 'hidden_nav' => true],
     ];
@@ -34,6 +35,9 @@ if (!function_exists('nav_is_active')) {
         }
         if ($itemPage === 'auditoria') {
             return $currentPage === 'auditoria';
+        }
+        if ($itemPage === 'standby') {
+            return $currentPage === 'standby';
         }
         if ($itemPage === 'juridico-dashboard') {
             return $currentPage === 'juridico-dashboard';

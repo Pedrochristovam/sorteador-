@@ -27,6 +27,7 @@ $allowedPages = [
     'historico',
     'historico-detalhe',
     'auditoria',
+    'standby',
     'resultado',
     // Módulo Jurídico — Edital 01/2026
     'juridico-dashboard',
@@ -51,6 +52,7 @@ $pageTitles = [
     'historico' => 'Histórico de Sorteios',
     'historico-detalhe' => 'Detalhe do Sorteio',
     'auditoria' => 'Regulamentos & Auditoria',
+    'standby' => 'Standby',
     'resultado' => 'Resultado do Sorteio',
     'juridico-dashboard' => 'Módulo Jurídico',
     'juridico-sociedades' => 'Sociedades de Advogados',

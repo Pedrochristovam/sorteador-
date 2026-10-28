@@ -72,6 +72,9 @@ try {
             : ['evento' => 'sorteio_executado', 'timestamp' => $agora, 'detalhe' => 'Selecionada: ' . $nomesSorteadas];
     }
     $eventos[] = ['evento' => 'hash_consolidado', 'timestamp' => $agora, 'detalhe' => null];
+    if (($sorteio['status'] ?? '') === 'aguardando_aceite') {
+        $eventos[] = ['evento' => 'aguardando_aceite', 'timestamp' => $agora, 'detalhe' => 'Standby: confirme se a empresa aceitou a demanda'];
+    }
 
     $audit = $auditService->registrar([
         'sorteioId' => $sorteio['id'],

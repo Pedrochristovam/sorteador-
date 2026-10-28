@@ -87,9 +87,9 @@ function generate_id(string $prefix): string
 function status_badge_class(string $status): string
 {
     return match (strtolower($status)) {
-        'ativa', 'ativo', 'concluido', 'concluído' => 'badge-success',
-        'inativa', 'inativo', 'cancelado' => 'badge-danger',
-        'pendente', 'em_andamento', 'aguardando_orcamento' => 'badge-warning',
+        'ativa', 'ativo', 'concluido', 'concluído', 'aceito' => 'badge-success',
+        'inativa', 'inativo', 'cancelado', 'recusado' => 'badge-danger',
+        'pendente', 'em_andamento', 'aguardando_orcamento', 'aguardando_aceite' => 'badge-warning',
         default => 'badge-neutral',
     };
 }
@@ -101,6 +101,8 @@ function status_sorteio_label(string $status): string
         'cancelado' => 'Cancelado',
         'em_andamento' => 'Em andamento',
         'aguardando_orcamento' => 'Aguardando orçamentos',
+        'aguardando_aceite' => 'Aguardando aceite',
+        'recusado' => 'Recusado pela empresa',
         default => ucfirst($status),
     };
 }
@@ -309,6 +311,9 @@ function build_execucao_log(array $eventos, array $ctx = []): array
         'mais_proxima_escolhida' => ['SELECTION', 'Credenciada mais próxima escolhida:'],
         'sorteadas_orcamento' => ['SELECTION', 'Credenciadas sorteadas para orçamento:'],
         'orcamentos_registrados' => ['QUOTES', 'Orçamentos registrados — menor valor leva o serviço:'],
+        'aguardando_aceite' => ['STANDBY', 'Aguardando aceite ou recusa da empresa sorteada.'],
+        'demanda_aceita' => ['ACCEPT', 'Empresa aceitou a demanda — entra no rodízio:'],
+        'demanda_recusada' => ['REFUSE', 'Empresa recusou a demanda — permanece apta aos próximos sorteios:'],
         'hash_consolidado' => ['FINALIZATION', 'Hash SHA-256 consolidado e trilha assinada.'],
     ];
 

@@ -111,13 +111,16 @@ final class EligibilityService
         foreach ($empresas as $empresa) {
             $av = $avaliacoes[$empresa->id];
             $rota = $av['rota'];
+            // Só propaga km se for rota de carro real — nunca linha reta
+            $rotaCarro = DistanceService::isRotaCarro($rota);
+            $kmCarro = $rotaCarro ? (float) $rota['km'] : null;
             $item = (new EmpresaElegivel(
                 empresaId: $empresa->id,
                 nome: $empresa->nome,
                 cnpj: $empresa->cnpj,
                 cidade: $empresa->cidade,
                 endereco: $empresa->endereco . ($empresa->bairro ? ' — ' . $empresa->bairro : ''),
-                distanciaKm: $rota['km'] ?? null,
+                distanciaKm: $kmCarro,
                 servicosCompativeis: $av['servicosCompativeis'],
                 criterios: $av['criterios'],
                 elegivel: $av['aprovada'],
@@ -125,10 +128,11 @@ final class EligibilityService
                 motivosEliminacao: $av['motivos'],
                 extras: [
                     'uf' => $empresa->uf,
-                    'duracaoMin' => $rota['minutos'] ?? null,
-                    'idaVoltaKm' => isset($rota['km']) ? round($rota['km'] * 2, 1) : null,
-                    'distanciaFonte' => $rota['fonte'] ?? null,
+                    'duracaoMin' => $rotaCarro ? ($rota['minutos'] ?? null) : null,
+                    'idaVoltaKm' => $kmCarro !== null ? round($kmCarro * 2, 1) : null,
+                    'distanciaFonte' => $rotaCarro ? ($rota['fonte'] ?? null) : ($rota['fonte'] ?? 'indisponivel'),
                     'distanciaPrecisao' => $rota['precisao'] ?? null,
+                    'distanciaModo' => $rotaCarro ? 'driving' : null,
                     'atendeAcima100km' => $empresa->atendeAcima100km,
                     'mesmaCidade' => normalizar_texto($empresa->cidade) === $cidadeDemanda,
                     'emRodizio' => isset($chamadas[$empresa->id]),
@@ -281,8 +285,8 @@ final class EligibilityService
         if ($empresa->atendeAcima100km) {
             return [true, null];
         }
-        if (!$jaAprovada || ($rota['km'] ?? null) === null) {
-            // Sem rota apurada não elimina: a região atendida continua valendo
+        // Só aplica o limite com ROTA DE CARRO real (Google/OSRM). Sem isso, não elimina.
+        if (!$jaAprovada || !DistanceService::isRotaCarro($rota)) {
             return [true, null];
         }
         $idaVolta = round($rota['km'] * 2, 1);
