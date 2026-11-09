@@ -15,6 +15,7 @@ if ($isJuridico) {
         ['page' => 'empresas', 'label' => 'Empresas', 'icon' => 'building-2'],
         ['page' => 'historico', 'label' => 'Histórico', 'icon' => 'history'],
         ['page' => 'standby', 'label' => 'Standby', 'icon' => 'hourglass'],
+        ['page' => 'escolha-manual', 'label' => 'Escolha manual', 'icon' => 'hand'],
         ['page' => 'auditoria', 'label' => 'Auditoria', 'icon' => 'shield-check'],
         ['page' => 'novo-sorteio', 'label' => 'Novo Sorteio', 'icon' => 'shuffle', 'hidden_nav' => true],
     ];
@@ -39,6 +40,9 @@ if (!function_exists('nav_is_active')) {
         if ($itemPage === 'standby') {
             return $currentPage === 'standby';
         }
+        if ($itemPage === 'escolha-manual') {
+            return $currentPage === 'escolha-manual';
+        }
         if ($itemPage === 'juridico-dashboard') {
             return $currentPage === 'juridico-dashboard';
         }
@@ -54,6 +58,23 @@ if (!function_exists('nav_is_active')) {
 
 $iniciaisUser = 'CL';
 $nomeExibicao = 'Comissão de Licitação';
+
+$standbyPendentes = 0;
+$standbyCriticos = 0;
+if (empty($isJuridico) && class_exists('DrawService')) {
+    try {
+        $standbyLista = (new DrawService())->listStandby();
+        $standbyPendentes = count($standbyLista);
+        foreach ($standbyLista as $sbItem) {
+            if (standby_urgencia($sbItem['dataHora'] ?? null) === 'critico') {
+                $standbyCriticos++;
+            }
+        }
+    } catch (Throwable) {
+        $standbyPendentes = 0;
+        $standbyCriticos = 0;
+    }
+}
 ?>
 <header class="app-header">
   <div class="header-top">
@@ -91,10 +112,22 @@ $nomeExibicao = 'Comissão de Licitação';
     </form>
 
     <div class="header-actions">
-      <button type="button" class="icon-btn" aria-label="Notificações">
+      <a class="icon-btn<?= $standbyPendentes > 0 ? ' has-notif' : '' ?>"
+         href="<?= e(page_url('standby')) ?>"
+         aria-label="<?= $standbyPendentes > 0
+           ? $standbyPendentes . ' aceite(s) em standby'
+           : 'Standby — nenhuma pendência' ?>"
+         title="<?= $standbyPendentes > 0
+           ? ($standbyCriticos > 0
+             ? $standbyCriticos . ' crítico(s) · ' . $standbyPendentes . ' pendente(s)'
+             : $standbyPendentes . ' pendente(s) no Standby')
+           : 'Abrir Standby' ?>">
         <i data-lucide="bell"></i>
-        <span class="notif-dot"></span>
-      </button>
+        <?php if ($standbyPendentes > 0): ?>
+          <span class="notif-dot<?= $standbyCriticos > 0 ? ' is-critico' : '' ?>"></span>
+          <span class="notif-count"><?= $standbyPendentes > 9 ? '9+' : $standbyPendentes ?></span>
+        <?php endif; ?>
+      </a>
       <div class="user-chip">
         <div class="user-chip-text">
           <strong><?= e($nomeExibicao) ?></strong>
@@ -116,6 +149,9 @@ $nomeExibicao = 'Comissão de Licitação';
            href="<?= e(page_url($item['page'])) ?>">
           <i data-lucide="<?= e($item['icon']) ?>"></i>
           <?= e($item['label']) ?>
+          <?php if (($item['page'] ?? '') === 'standby' && $standbyPendentes > 0): ?>
+            <span class="nav-badge<?= $standbyCriticos > 0 ? ' is-critico' : '' ?>"><?= $standbyPendentes ?></span>
+          <?php endif; ?>
         </a>
       <?php endforeach; ?>
     </div>

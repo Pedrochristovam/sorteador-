@@ -38,8 +38,15 @@ final class Empresa
         public readonly array $estadosAtuacao = [],
         /** @var list<string> */
         public readonly array $estadosAtuacaoCodigos = [],
-        /** false = atende somente até 100 km ida e volta (50 km ida + 50 km volta). */
+        /** false = atende somente até 200 km ida e volta (100 km ida + 100 km volta). */
         public readonly bool $atendeAcima100km = true,
+        /** Marcação manual: já realizou serviço → entra no rodízio (fora dos sorteios automáticos). */
+        public readonly bool $servicoRealizado = false,
+        public readonly ?string $servicoRealizadoObs = null,
+        public readonly ?string $servicoRealizadoEm = null,
+        /** Data/hora em que a empresa foi cadastrada neste sistema. */
+        public readonly ?string $criadoEm = null,
+        public readonly ?string $atualizadoEm = null,
     ) {
     }
 
@@ -71,6 +78,19 @@ final class Empresa
             estadosAtuacao: array_values($data['estadosAtuacao'] ?? []),
             estadosAtuacaoCodigos: array_values($data['estadosAtuacaoCodigos'] ?? []),
             atendeAcima100km: filter_var($data['atendeAcima100km'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            servicoRealizado: filter_var($data['servicoRealizado'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            servicoRealizadoObs: isset($data['servicoRealizadoObs']) && $data['servicoRealizadoObs'] !== ''
+                ? (string) $data['servicoRealizadoObs']
+                : null,
+            servicoRealizadoEm: isset($data['servicoRealizadoEm']) && $data['servicoRealizadoEm'] !== ''
+                ? (string) $data['servicoRealizadoEm']
+                : null,
+            criadoEm: isset($data['criadoEm']) && $data['criadoEm'] !== ''
+                ? (string) $data['criadoEm']
+                : null,
+            atualizadoEm: isset($data['atualizadoEm']) && $data['atualizadoEm'] !== ''
+                ? (string) $data['atualizadoEm']
+                : null,
         );
     }
 
@@ -102,6 +122,11 @@ final class Empresa
             'estadosAtuacao' => $this->estadosAtuacao,
             'estadosAtuacaoCodigos' => $this->estadosAtuacaoCodigos,
             'atendeAcima100km' => $this->atendeAcima100km,
+            'servicoRealizado' => $this->servicoRealizado,
+            'servicoRealizadoObs' => $this->servicoRealizadoObs,
+            'servicoRealizadoEm' => $this->servicoRealizadoEm,
+            'criadoEm' => $this->criadoEm,
+            'atualizadoEm' => $this->atualizadoEm,
         ];
     }
 

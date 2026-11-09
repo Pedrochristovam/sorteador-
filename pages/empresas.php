@@ -229,87 +229,69 @@ $loteVerbos = ['desativar' => 'desativada(s)', 'reativar' => 'reativada(s)', 'ex
   </div>
 </div>
 
-<section class="panel">
-  <div class="table-wrap">
-    <table class="data-table data-table-premium empresas-table">
-      <thead>
-        <tr>
-          <th class="col-select">
-            <input type="checkbox" id="selectAllPage" title="Selecionar todas desta página" <?= $pagina === [] ? 'disabled' : '' ?>>
-          </th>
-          <th>Empresa &amp; Contato</th>
-          <th>Contrato</th>
-          <th>Cidade</th>
-          <th>Endereço</th>
-          <th>Atividades Habilitadas</th>
-          <th>Status</th>
-          <th>Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php if ($pagina === []): ?>
-          <tr><td colspan="8"><div class="empty-state">Nenhuma empresa encontrada com os filtros informados.</div></td></tr>
-        <?php else: ?>
-          <?php foreach ($pagina as $empresa): ?>
-            <tr class="<?= $empresa->isAtiva() ? '' : 'row-inactive' ?>">
-              <td class="col-select">
-                <input type="checkbox" class="row-select" name="ids[]" value="<?= e($empresa->id) ?>" form="bulkForm"
-                  data-nome="<?= e($empresa->nome) ?>" aria-label="Selecionar <?= e($empresa->nome) ?>">
-              </td>
-              <td>
-                <div class="company-cell">
-                  <div class="company-avatar <?= $empresa->isAtiva() ? 'tone-' . e(avatar_tone($empresa->id)) : 'tone-inactive' ?>">
-                    <?= e(iniciais_empresa($empresa->nome)) ?>
-                  </div>
-                  <div>
+<section class="panel panel-empresas-lista">
+  <div class="panel-header empresas-list-head">
+    <div class="empresas-list-select">
+      <input type="checkbox" id="selectAllPage" title="Selecionar todas desta página" <?= $pagina === [] ? 'disabled' : '' ?>>
+      <label for="selectAllPage">Selecionar página</label>
+    </div>
+    <span class="muted"><?= (int) $totalFiltrado ?> resultado(s)</span>
+  </div>
+
+  <div class="empresas-list">
+    <?php if ($pagina === []): ?>
+      <div class="empty-state">Nenhuma empresa encontrada com os filtros informados.</div>
+    <?php else: ?>
+      <?php foreach ($pagina as $empresa): ?>
+        <article class="emp-card<?= $empresa->isAtiva() ? '' : ' is-inactive' ?>">
+          <label class="emp-card-check">
+            <input type="checkbox" class="row-select" name="ids[]" value="<?= e($empresa->id) ?>" form="bulkForm"
+              data-nome="<?= e($empresa->nome) ?>" aria-label="Selecionar <?= e($empresa->nome) ?>">
+          </label>
+
+          <div class="emp-card-main">
+            <div class="emp-card-top">
+              <div class="company-cell">
+                <div class="company-avatar <?= $empresa->isAtiva() ? 'tone-' . e(avatar_tone($empresa->id)) : 'tone-inactive' ?>">
+                  <?= e(iniciais_empresa($empresa->nome)) ?>
+                </div>
+                <div class="emp-card-identity">
+                  <a class="company-name-link" href="<?= e(page_url('empresa-detalhe', ['id' => $empresa->id])) ?>">
                     <strong><?= e($empresa->nome) ?></strong>
-                    <?php if (!$empresa->isAtiva()): ?>
-                      <span class="inactive-flag">Desativada</span>
-                    <?php endif; ?>
-                    <?php if ($empresa->email): ?>
-                      <span class="contact-line"><i data-lucide="mail"></i> <?= e($empresa->email) ?></span>
+                  </a>
+                  <div class="emp-card-meta">
+                    <span class="mono">#<?= e($empresa->numeroContrato ?: '—') ?></span>
+                    <span class="sep">·</span>
+                    <span class="local-cell"><i data-lucide="map-pin"></i> <?= e($empresa->cidade) ?>/<?= e($empresa->uf) ?></span>
+                    <?php if ($empresa->criadoEm): ?>
+                      <span class="sep">·</span>
+                      <span class="muted" title="Data de cadastro no sistema"><i data-lucide="calendar-plus"></i> <?= e(format_date($empresa->criadoEm)) ?></span>
                     <?php endif; ?>
                     <?php if ($empresa->cnpj): ?>
+                      <span class="sep">·</span>
                       <span class="mono muted"><?= e($empresa->cnpj) ?></span>
-                    <?php elseif ($empresa->telefone): ?>
-                      <span class="muted"><?= e($empresa->telefone) ?></span>
                     <?php endif; ?>
                   </div>
-                </div>
-              </td>
-              <td class="mono">#<?= e($empresa->numeroContrato ?: '—') ?></td>
-              <td>
-                <div class="local-cell">
-                  <i data-lucide="map-pin"></i>
-                  <?= e($empresa->cidade) ?>/<?= e($empresa->uf) ?>
-                </div>
-              </td>
-              <td>
-                <div class="address-cell">
-                  <span><?= e($empresa->endereco) ?></span>
-                  <?php if ($empresa->bairro): ?><span class="muted"><?= e($empresa->bairro) ?></span><?php endif; ?>
-                  <?php if ($empresa->cep): ?><span class="muted">CEP <?= e($empresa->cep) ?></span><?php endif; ?>
-                </div>
-              </td>
-              <td>
-                <div class="tags-wrap">
-                  <?php foreach (array_slice($empresa->servicos, 0, 3) as $s): ?>
-                    <span class="tag"><?= e($s) ?></span>
-                  <?php endforeach; ?>
-                  <?php if (count($empresa->servicos) > 3): ?>
-                    <span class="tag tag-more">+<?= count($empresa->servicos) - 3 ?></span>
-                  <?php endif; ?>
-                  <?php if (!$empresa->atendeAcima100km): ?>
-                    <span class="tag tag-km-limite" title="Atende somente até 100 km ida e volta">≤ 100 km</span>
+                  <?php if ($empresa->email || $empresa->telefone || $empresa->responsavel): ?>
+                    <div class="emp-card-contacts">
+                      <?php if ($empresa->email): ?>
+                        <span class="contact-line"><i data-lucide="mail"></i> <?= e($empresa->email) ?></span>
+                      <?php endif; ?>
+                      <?php if ($empresa->telefone): ?>
+                        <span class="contact-line"><i data-lucide="phone"></i> <?= e($empresa->telefone) ?></span>
+                      <?php endif; ?>
+                      <?php if ($empresa->responsavel): ?>
+                        <span class="contact-line"><i data-lucide="user"></i> <?= e($empresa->responsavel) ?></span>
+                      <?php endif; ?>
+                    </div>
                   <?php endif; ?>
                 </div>
-              </td>
-              <td>
+              </div>
+
+              <div class="emp-card-aside">
                 <span class="status-pill <?= $empresa->isAtiva() ? 'success' : 'danger' ?>">
                   <span class="dot"></span> <?= $empresa->isAtiva() ? 'Ativa' : 'Desativada' ?>
                 </span>
-              </td>
-              <td>
                 <div class="row-actions">
                   <a class="btn btn-outline btn-sm" href="<?= e(page_url('empresa-detalhe', ['id' => $empresa->id])) ?>" title="Ver">
                     <i data-lucide="eye"></i>
@@ -325,12 +307,37 @@ $loteVerbos = ['desativar' => 'desativada(s)', 'reativar' => 'reativada(s)', 'ex
                     </button>
                   </form>
                 </div>
-              </td>
-            </tr>
-          <?php endforeach; ?>
-        <?php endif; ?>
-      </tbody>
-    </table>
+              </div>
+            </div>
+
+            <div class="emp-card-bottom">
+              <div class="emp-card-address">
+                <i data-lucide="map"></i>
+                <span>
+                  <?= e($empresa->endereco) ?>
+                  <?php if ($empresa->bairro): ?> — <?= e($empresa->bairro) ?><?php endif; ?>
+                  <?php if ($empresa->cep): ?> · CEP <?= e($empresa->cep) ?><?php endif; ?>
+                </span>
+              </div>
+              <div class="tags-wrap">
+                <?php foreach (array_slice($empresa->servicos, 0, 4) as $s): ?>
+                  <span class="tag"><?= e($s) ?></span>
+                <?php endforeach; ?>
+                <?php if (count($empresa->servicos) > 4): ?>
+                  <span class="tag tag-more">+<?= count($empresa->servicos) - 4 ?></span>
+                <?php endif; ?>
+                <?php if (!$empresa->atendeAcima100km): ?>
+                  <span class="tag tag-km-limite" title="Atende somente até 200 km ida e volta (100+100)">≤ 200 km</span>
+                <?php endif; ?>
+                <?php if ($empresa->servicoRealizado): ?>
+                  <span class="tag tag-rodizio" title="<?= e($empresa->servicoRealizadoObs ?: 'Já realizou serviço — no rodízio') ?>">No rodízio</span>
+                <?php endif; ?>
+              </div>
+            </div>
+          </div>
+        </article>
+      <?php endforeach; ?>
+    <?php endif; ?>
   </div>
 
   <div class="table-footer">
@@ -414,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
       selectAllPage.checked = rows.length > 0 && n === rows.length;
       selectAllPage.indeterminate = n > 0 && n < rows.length;
     }
-    rows.forEach((cb) => cb.closest('tr')?.classList.toggle('row-selected', cb.checked));
+    rows.forEach((cb) => cb.closest('.emp-card')?.classList.toggle('is-selected', cb.checked));
   }
 
   function marcarPagina(valor) {

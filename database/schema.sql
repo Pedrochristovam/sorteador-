@@ -59,8 +59,12 @@ CREATE TABLE IF NOT EXISTS empresas (
   data_convenio DATE NOT NULL,
   numero_contrato VARCHAR(60) NOT NULL DEFAULT '',
   ordem_credenciamento INT NOT NULL DEFAULT 0,
-  -- 1 = atende acima de 100 km (ida e volta); 0 = somente até 100 km (50 ida + 50 volta)
+  -- 1 = atende acima de 200 km ida e volta; 0 = somente até 200 km (100 ida + 100 volta)
   atende_acima_100km TINYINT(1) NOT NULL DEFAULT 1,
+  -- Marcação manual: já realizou serviço → entra no rodízio (fora dos sorteios automáticos; manual permanece liberado)
+  servico_realizado TINYINT(1) NOT NULL DEFAULT 0,
+  servico_realizado_obs TEXT NULL,
+  servico_realizado_em DATETIME NULL,
   telefone VARCHAR(180) NULL,
   email VARCHAR(180) NULL,
   responsavel VARCHAR(160) NULL,
@@ -208,7 +212,7 @@ INSERT INTO criterios (codigo, nome, descricao, obrigatorio, tipo) VALUES
 ('servico_compativel', 'Atividade habilitada', 'A empresa deve estar habilitada em ao menos uma das atividades solicitadas na demanda.', 1, 'boolean'),
 ('convenio_ativo', 'Credenciado ativo', 'Somente empresas com credenciamento ativo participam do sorteio.', 1, 'boolean'),
 ('localizacao', 'Atende a região da demanda', 'A empresa deve ter no cadastro a região (ou estado) onde fica a demanda. A distância não elimina quem atende a região.', 1, 'region'),
-('limite_100km', 'Limite de deslocamento (100 km ida e volta)', 'Empresa cadastrada para atender só até 100 km (50 km ida + 50 km volta) sai quando a rota de carro até a demanda passa desse limite.', 1, 'distance'),
+('limite_100km', 'Limite de deslocamento (200 km ida e volta)', 'Empresa cadastrada para atender só até 200 km ida e volta (100 km ida + 100 km volta) sai quando a rota de carro até a demanda passa desse limite.', 1, 'distance'),
 ('documentacao_regular', 'Documentação regular', 'Empresa sem pendências cadastrais ou documentais.', 1, 'boolean')
 ON DUPLICATE KEY UPDATE nome = VALUES(nome), descricao = VALUES(descricao), tipo = VALUES(tipo);
 

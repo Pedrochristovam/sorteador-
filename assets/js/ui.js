@@ -9,8 +9,9 @@
     window.addEventListener('scroll', onScroll, { passive: true });
   }
 
-  // Entrada suave das seções conforme aparecem na tela
-  const alvosReveal = document.querySelectorAll([
+  // Entrada suave — desligada em páginas densas (auditoria) para não pesar
+  const paginaPesada = document.body.classList.contains('page-auditoria');
+  const alvosReveal = paginaPesada ? [] : document.querySelectorAll([
     '.content > .breadcrumb',
     '.content > .dash-hero',
     '.content > .empresas-hero',

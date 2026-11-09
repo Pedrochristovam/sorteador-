@@ -4,7 +4,22 @@ declare(strict_types=1);
 
 $drawService = new DrawService();
 $pendentes = $drawService->listStandby();
-usort($pendentes, static fn(array $a, array $b): int => strcmp((string) $b['dataHora'], (string) $a['dataHora']));
+usort($pendentes, static function (array $a, array $b): int {
+    $ha = standby_horas_pendente($a['dataHora'] ?? null) ?? 0;
+    $hb = standby_horas_pendente($b['dataHora'] ?? null) ?? 0;
+    return $hb <=> $ha; // mais antigos primeiro
+});
+
+$nCritico = 0;
+$nAtencao = 0;
+foreach ($pendentes as $s) {
+    $u = standby_urgencia($s['dataHora'] ?? null);
+    if ($u === 'critico') {
+        $nCritico++;
+    } elseif ($u === 'atencao') {
+        $nAtencao++;
+    }
+}
 ?>
 
 <section class="page-hero reveal">
@@ -21,8 +36,36 @@ usort($pendentes, static fn(array $a, array $b): int => strcmp((string) $b['data
       <span>Pendentes</span>
       <strong class="count-up" data-count="<?= count($pendentes) ?>"><?= count($pendentes) ?></strong>
     </div>
+    <?php if ($nAtencao > 0): ?>
+      <div class="kpi-mini tone-warn">
+        <span>≥ 24 h</span>
+        <strong><?= $nAtencao ?></strong>
+      </div>
+    <?php endif; ?>
+    <?php if ($nCritico > 0): ?>
+      <div class="kpi-mini tone-danger">
+        <span>≥ 48 h</span>
+        <strong><?= $nCritico ?></strong>
+      </div>
+    <?php endif; ?>
   </div>
 </section>
+
+<?php if ($nCritico > 0 || $nAtencao > 0): ?>
+  <div class="standby-alert <?= $nCritico > 0 ? 'is-critico' : 'is-atencao' ?> reveal" role="status">
+    <i data-lucide="<?= $nCritico > 0 ? 'alert-triangle' : 'clock' ?>"></i>
+    <div>
+      <strong>
+        <?php if ($nCritico > 0): ?>
+          <?= $nCritico ?> aceite(s) com mais de 48 horas sem resposta
+        <?php else: ?>
+          <?= $nAtencao ?> aceite(s) com mais de 24 horas pendente(s)
+        <?php endif; ?>
+      </strong>
+      <p>Priorize a confirmação — enquanto estiver em standby, a demanda não fecha e o rodízio não atualiza.</p>
+    </div>
+  </div>
+<?php endif; ?>
 
 <?php if ($pendentes === []): ?>
   <section class="empty-state reveal">
@@ -39,8 +82,10 @@ usort($pendentes, static fn(array $a, array $b): int => strcmp((string) $b['data
         $demanda = $s['demanda'] ?? [];
         $sid = (string) ($s['id'] ?? '');
         $modalidade = (string) ($s['modalidade'] ?? 'sorteio');
+        $urgencia = standby_urgencia($s['dataHora'] ?? null);
+        $tempoLabel = standby_tempo_label($s['dataHora'] ?? null);
       ?>
-      <article class="standby-card" data-sorteio-id="<?= e($sid) ?>">
+      <article class="standby-card urgency-<?= e($urgencia) ?>" data-sorteio-id="<?= e($sid) ?>">
         <header class="standby-card-head">
           <div>
             <span class="modalidade-pill modalidade-<?= e($modalidade) ?>"><?= e(modalidade_label($modalidade)) ?></span>
@@ -51,7 +96,12 @@ usort($pendentes, static fn(array $a, array $b): int => strcmp((string) $b['data
               <?php if (!empty($empresa['cidade'])): ?> · <?= e($empresa['cidade']) ?><?php endif; ?>
             </p>
           </div>
-          <span class="badge badge-warning">Aguardando aceite</span>
+          <div class="standby-badges">
+            <span class="standby-age age-<?= e($urgencia) ?>" title="Tempo desde o sorteio">
+              <i data-lucide="timer"></i> <?= e($tempoLabel) ?>
+            </span>
+            <span class="badge badge-warning">Aguardando aceite</span>
+          </div>
         </header>
 
         <dl class="standby-meta">
@@ -111,16 +161,46 @@ usort($pendentes, static fn(array $a, array $b): int => strcmp((string) $b['data
 <?php endif; ?>
 
 <style>
+.page-hero-meta { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: stretch; }
+.kpi-mini.tone-warn { background: #fffbeb; border: 1px solid #fde68a; }
+.kpi-mini.tone-warn strong { color: #b45309; }
+.kpi-mini.tone-danger { background: #fff1f2; border: 1px solid #fecdd3; }
+.kpi-mini.tone-danger strong { color: #be123c; }
+.standby-alert {
+  display: flex; gap: 0.85rem; align-items: flex-start;
+  margin: 0 0 1.25rem; padding: 1rem 1.15rem;
+  border-radius: 16px; border: 1px solid #fde68a; background: #fffbeb; color: #92400e;
+}
+.standby-alert.is-critico { border-color: #fecdd3; background: #fff1f2; color: #9f1239; }
+.standby-alert svg { width: 22px; height: 22px; flex-shrink: 0; margin-top: 0.1rem; }
+.standby-alert strong { display: block; margin-bottom: 0.2rem; }
+.standby-alert p { margin: 0; font-size: 0.9rem; line-height: 1.45; opacity: 0.92; }
 .standby-list { display: grid; gap: 1.5rem; margin-top: 1.5rem; }
 .standby-card {
   border-top: 1px solid rgba(15, 23, 42, 0.08);
   padding: 1.5rem 0 2rem;
+}
+.standby-card.urgency-atencao { border-top-color: #f59e0b; }
+.standby-card.urgency-critico {
+  border-top-color: #e11d48;
+  background: linear-gradient(180deg, rgba(255, 241, 242, 0.55), transparent 48%);
+  padding-left: 0.85rem; padding-right: 0.85rem; margin-left: -0.85rem; margin-right: -0.85rem;
+  border-radius: 0 0 16px 16px;
 }
 .standby-card-head {
   display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start;
   margin-bottom: 1rem;
 }
 .standby-card-head h2 { margin: 0.35rem 0 0.2rem; font-size: 1.35rem; }
+.standby-badges { display: flex; flex-wrap: wrap; gap: 0.45rem; justify-content: flex-end; align-items: center; }
+.standby-age {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.28rem 0.65rem; border-radius: 999px;
+  font-size: 0.78rem; font-weight: 700; background: #f1f5f9; color: #475569;
+}
+.standby-age svg { width: 14px; height: 14px; }
+.standby-age.age-atencao { background: #fffbeb; color: #b45309; }
+.standby-age.age-critico { background: #fff1f2; color: #be123c; }
 .standby-meta {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.85rem 1.25rem;
   margin: 0 0 1.25rem;

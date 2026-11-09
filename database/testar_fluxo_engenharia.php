@@ -130,11 +130,22 @@ try {
         'distância é rota de carro (não linha reta): ' . ($imp['fonteDistancia'] ?? '?')
     );
     ok(($imp['modalidade'] ?? '') === 'sorteio', 'modalidade sugerida = sorteio (' . ($imp['modalidadeMotivo'] ?? '') . ')');
-    echo "         desativadas {$imp['desativadas']} · sem atividade {$imp['semAtividade']} · fora da região {$imp['foraRegiao']} · limite 100km {$imp['limite100']} · na cidade {$imp['aptasNaCidade']} · mais próxima: " . ($imp['maisProxima']['nome'] ?? '-') . ' ' . ($imp['maisProxima']['km'] ?? '') . " km" . PHP_EOL;
+    echo "         desativadas {$imp['desativadas']} · sem atividade {$imp['semAtividade']} · fora da região {$imp['foraRegiao']} · limite 200km {$imp['limite100']} · na cidade {$imp['aptasNaCidade']} · mais próxima: " . ($imp['maisProxima']['nome'] ?? '-') . ' ' . ($imp['maisProxima']['km'] ?? '') . " km" . PHP_EOL;
 
     $r = http('POST', "$base/api/calcular-elegiveis.php", $demandaBase);
     $dados = $r['json']['data'] ?? [];
-    ok(!empty($dados['elegiveis']), 'cálculo completo salvo no fluxo (' . count($dados['elegiveis'] ?? []) . ' aptas)');
+    $cidInfo = $dados['cidade'] ?? [];
+    if (($cidInfo['aptasNaCidade'] ?? 0) > 0) {
+        ok(!empty($cidInfo['priorizacaoAplicada']), 'há aptas na cidade → priorização cidade ≤ 200 km ida/volta');
+        $foraCidadePool = array_filter($dados['elegiveis'] ?? [], static fn($e) => empty($e['mesmaCidade']));
+        ok($foraCidadePool === [], 'pool do sorteio só com sediadas na cidade da demanda');
+        $foraMargem = array_filter($dados['elegiveis'] ?? [], static fn($e) => ($e['idaVoltaKm'] ?? 9999) > 200);
+        ok($foraMargem === [], 'nenhuma apta no pool com ida/volta acima de 200 km');
+        ok(empty($cidInfo['redirecionarManual']) && !empty($dados['elegiveis']), 'com aptas na cidade dentro da margem → segue sorteio (' . count($dados['elegiveis'] ?? []) . ' aptas)');
+    } else {
+        ok(!empty($cidInfo['semEmpresasNaCidade']) && !empty($cidInfo['redirecionarManual']), 'sem aptas na cidade → acusa e aponta escolha manual');
+        ok(($dados['elegiveis'] ?? []) === [], 'sem aptas na cidade → pool automático vazio');
+    }
     $kms = array_values(array_filter(array_column($dados['elegiveis'] ?? [], 'distanciaKm'), static fn($v) => $v !== null));
     $ordenado = $kms;
     sort($ordenado);
@@ -153,8 +164,8 @@ try {
         return true;
     });
     ok($semRegiao === [], 'todas as aptas atendem a região da demanda');
-    $limitadasAcima = array_filter($dados['elegiveis'] ?? [], static fn($e) => empty($e['atendeAcima100km']) && ($e['idaVoltaKm'] ?? 0) > 100);
-    ok($limitadasAcima === [], 'nenhuma apta "até 100 km" com ida e volta acima de 100 km');
+    $limitadasAcima = array_filter($dados['elegiveis'] ?? [], static fn($e) => empty($e['atendeAcima100km']) && ($e['idaVoltaKm'] ?? 0) > 200);
+    ok($limitadasAcima === [], 'nenhuma apta "até 200 km" com ida e volta acima de 200 km');
 
     foreach (['demanda', 'elegiveis', 'preparacao', 'execucao'] as $etapa) {
         pagina("novo-sorteio etapa $etapa", "$base/index.php?page=novo-sorteio&etapa=$etapa");
@@ -195,27 +206,50 @@ try {
     // Confirma o 2º também (senão fica pendente no standby)
     http('POST', "$base/api/registrar-aceite.php", ['sorteioId' => $s2['id'] ?? '', 'decisao' => 'aceito']);
 
-    // ---------- 3. mais próxima ----------
-    echo PHP_EOL . "3. Laudo com preço em edital → mais próxima" . PHP_EOL;
+    // ---------- 3. preço de edital → sorteio normal ----------
+    echo PHP_EOL . "3. Laudo com preço em edital → sorteio com rodízio" . PHP_EOL;
     $r = http('POST', "$base/api/calcular-elegiveis.php", ['precoEdital' => true] + $demandaBase);
-    ok(($r['json']['impacto']['modalidade'] ?? '') === 'proxima', 'modalidade = mais próxima');
-    $primeira = $r['json']['data']['elegiveis'][0] ?? [];
+    ok(($r['json']['impacto']['modalidade'] ?? '') === 'sorteio', 'modalidade = sorteio (não mais próxima)');
+    $idsAptasEdital = array_column($r['json']['data']['elegiveis'] ?? [], 'empresaId');
+    ok(count($idsAptasEdital) >= 2, 'preço de edital leva todas as aptas ao sorteio (' . count($idsAptasEdital) . ')');
     $r = http('POST', "$base/api/realizar-sorteio.php", ['confirmado' => true]);
     $s3 = $r['json']['data']['sorteio'] ?? [];
-    ok(($s3['empresaSelecionada']['id'] ?? '') === ($primeira['empresaId'] ?? '-'), sprintf('escolhida a mais próxima: %s (%s km)', $s3['empresaSelecionada']['nome'] ?? '?', $s3['empresaSelecionada']['distanciaKm'] ?? '?'));
-    ok(($s3['status'] ?? '') === 'aguardando_aceite', 'mais próxima também vai para standby');
-    ok(count($s3['ranking'] ?? []) > 0, 'ranking de distâncias registrado (' . count($s3['ranking'] ?? []) . ')');
+    $idS3 = $s3['empresaSelecionada']['id'] ?? '';
+    ok(in_array($idS3, $idsAptasEdital, true), 'sorteada está entre as aptas → ' . ($s3['empresaSelecionada']['nome'] ?? '?'));
+    ok(($s3['modalidade'] ?? '') === 'sorteio', 'execução é sorteio com rodízio');
+    ok(count($s3['participantes'] ?? []) >= 1, 'participantes do sorteio: ' . count($s3['participantes'] ?? []));
+    ok(($s3['status'] ?? '') === 'aguardando_aceite', 'preço de edital também vai para standby');
     http('POST', "$base/api/registrar-aceite.php", ['sorteioId' => $s3['id'] ?? '', 'decisao' => 'aceito']);
-    pagina('resultado (mais próxima)', "$base/index.php?page=novo-sorteio&etapa=resultado");
+    pagina('resultado (preço edital/sorteio)', "$base/index.php?page=novo-sorteio&etapa=resultado");
 
     // ---------- 4. orçamento ----------
-    echo PHP_EOL . "4. Área construída > 1000 m² → orçamento entre 3" . PHP_EOL;
+    echo PHP_EOL . "4. Área construída > 1000 m² → orçamento entre as 3 mais próximas" . PHP_EOL;
     $r = http('POST', "$base/api/calcular-elegiveis.php", ['areaConstruidaM2' => '1500'] + $demandaBase);
     ok(($r['json']['impacto']['modalidade'] ?? '') === 'orcamento', 'modalidade = orçamento (' . ($r['json']['impacto']['modalidadeMotivo'] ?? '') . ')');
+    $elegOrc = $r['json']['data']['elegiveis'] ?? [];
+    $comRotaOrc = array_values(array_filter(
+        $elegOrc,
+        static fn(array $e): bool => ($e['distanciaKm'] ?? null) !== null && in_array($e['distanciaFonte'] ?? '', ['google', 'osm'], true)
+    ));
+    usort($comRotaOrc, static fn(array $a, array $b): int => ($a['distanciaKm'] <=> $b['distanciaKm']));
+    $livresOrc = array_values(array_filter($comRotaOrc, static fn(array $e): bool => empty($e['emRodizio'])));
+    $chamadasOrc = array_values(array_filter($comRotaOrc, static fn(array $e): bool => !empty($e['emRodizio'])));
+    $esperadoPool = array_slice($livresOrc, 0, 3);
+    if (count($esperadoPool) < 3 && $chamadasOrc !== []) {
+        $esperadoPool = array_merge($esperadoPool, array_slice($chamadasOrc, 0, 3 - count($esperadoPool)));
+        usort($esperadoPool, static fn(array $a, array $b): int => ($a['distanciaKm'] <=> $b['distanciaKm']));
+        $esperadoPool = array_slice($esperadoPool, 0, 3);
+    }
+    $esperado3 = array_column($esperadoPool, 'empresaId');
     $r = http('POST', "$base/api/realizar-sorteio.php", ['confirmado' => true]);
     $s4 = $r['json']['data']['sorteio'] ?? [];
     $ids = array_column($s4['sorteadas'] ?? [], 'id');
-    ok(count($ids) === 3 && count(array_unique($ids)) === 3, '3 empresas distintas sorteadas: ' . implode(', ', array_column($s4['sorteadas'] ?? [], 'nome')));
+    ok(count($ids) === 3 && count(array_unique($ids)) === 3, '3 empresas distintas: ' . implode(', ', array_column($s4['sorteadas'] ?? [], 'nome')));
+    sort($ids);
+    $esp = $esperado3;
+    sort($esp);
+    ok($ids === $esp, 'as 3 são as mais próximas (não sorteio no universo todo)');
+    ok(count($s4['participantes'] ?? []) === 3, 'só 3 participam do orçamento (não o ranking completo)');
     ok(($s4['status'] ?? '') === 'aguardando_orcamento' && empty($s4['empresaSelecionada']), 'status aguardando orçamento, sem vencedora ainda');
     pagina('resultado (aguardando orçamentos)', "$base/index.php?page=novo-sorteio&etapa=resultado");
     pagina('histórico com orçamento pendente', "$base/index.php?page=historico");
@@ -260,17 +294,54 @@ try {
     $r = http('POST', "$base/api/calcular-elegiveis.php", ['preview' => true, 'areaTerrenoM2' => '12000'] + $demandaBase);
     ok(($r['json']['impacto']['modalidade'] ?? '') === 'orcamento', 'terreno > 10.000 m² → orçamento');
 
-    // ---------- 5. somente a cidade ----------
+    // ---------- 5. somente a cidade (checkbox) + priorização automática ----------
     echo PHP_EOL . "5. Restringir às credenciadas da cidade" . PHP_EOL;
     $r = http('POST', "$base/api/calcular-elegiveis.php", ['somenteCidade' => true] + $demandaBase);
     $cid = $r['json']['data']['cidade'] ?? [];
     $el = $r['json']['data']['elegiveis'] ?? [];
+    $fora = array_filter($el, static fn($e) => empty($e['mesmaCidade']));
+    ok($fora === [], sprintf('pool só na cidade (priorização/restrição): %d aptas em %s', count($el), $cidade));
     if (($cid['aptasNaCidade'] ?? 0) >= 2) {
-        $fora = array_filter($el, static fn($e) => empty($e['mesmaCidade']));
-        ok($fora === [] && count($el) === $cid['aptasNaCidade'], sprintf('restrição aplicada: %d aptas, todas em %s', count($el), $cidade));
+        ok(!empty($cid['restricaoAplicada']) || !empty($cid['priorizacaoAplicada']), 'restrição ou priorização de cidade ativa');
+        ok(count($el) <= (int) $cid['aptasNaCidade'], 'pool ≤ aptas na cidade (filtro 200 km ida/volta)');
     } else {
-        ok(empty($cid['restricaoAplicada']), 'menos de 2 na cidade → restrição não aplicada');
+        ok(empty($cid['restricaoAplicada']), 'menos de 2 na cidade → checkbox restrição não aplicada');
     }
+
+    // ---------- 5b. escolha manual ignora rodízio na reescolha ----------
+    echo PHP_EOL . "5b. Escolha manual (pode repetir empresa já no rodízio)" . PHP_EOL;
+    $r = http('POST', "$base/api/calcular-elegiveis.php", ['modalidadeSolicitada' => 'manual', 'preview' => true] + $demandaBase);
+    $manData = $r['json']['data'] ?? [];
+    $manCid = $manData['cidade'] ?? [];
+    ok(empty($manCid['priorizacaoAplicada']) && empty($manCid['redirecionarManual']), 'manual não aplica priorização/redirect de cidade');
+    ok(($manData['totalElegiveis'] ?? 0) >= ($dados['totalElegiveis'] ?? 0), 'manual lista aptas sem esvaziar o pool da cidade');
+    $emRodizioManual = null;
+    foreach ($manData['elegiveis'] ?? [] as $e) {
+        if (!empty($e['emRodizio'])) {
+            $emRodizioManual = $e;
+            break;
+        }
+    }
+    if ($emRodizioManual !== null) {
+        $r = http('POST', "$base/api/registrar-escolha-manual.php", [
+            'modalidadeSolicitada' => 'manual',
+            'empresaId' => $emRodizioManual['empresaId'],
+        ] + $demandaBase);
+        ok(($r['json']['ok'] ?? false) === true, 'manual permite escolher empresa já no rodízio → ' . ($emRodizioManual['nome'] ?? '?'));
+        ok(($r['json']['data']['status'] ?? '') === 'aguardando_aceite', 'escolha manual vai para standby');
+    } else {
+        $primeira = ($manData['elegiveis'] ?? [])[0] ?? null;
+        if ($primeira && ($primeira['distanciaKm'] ?? null) !== null) {
+            $r = http('POST', "$base/api/registrar-escolha-manual.php", [
+                'modalidadeSolicitada' => 'manual',
+                'empresaId' => $primeira['empresaId'],
+            ] + $demandaBase);
+            ok(($r['json']['ok'] ?? false) === true, 'escolha manual registrada → ' . ($primeira['nome'] ?? '?'));
+        } else {
+            ok(false, 'sem empresa apta com rota para testar escolha manual');
+        }
+    }
+    pagina('escolha-manual', "$base/index.php?page=escolha-manual");
 
     // ---------- 6. páginas ----------
     echo PHP_EOL . "6. Renderização das páginas" . PHP_EOL;
@@ -278,7 +349,7 @@ try {
     foreach ([
         'dashboard' => 'page=dashboard',
         'empresas' => 'page=empresas',
-        'empresas (até 100km filtro)' => 'page=empresas&q=' . urlencode($cidade),
+        'empresas (filtro cidade)' => 'page=empresas&q=' . urlencode($cidade),
         'empresa nova' => 'page=empresa-form',
         'empresa editar' => 'page=empresa-form&id=' . urlencode($empId),
         'empresa detalhe' => 'page=empresa-detalhe&id=' . urlencode($empId),

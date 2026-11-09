@@ -14,8 +14,9 @@ final class Demanda
 
     public const MODALIDADES = [
         'sorteio' => 'Sorteio com rodízio',
-        'proxima' => 'Mais próxima (preço definido em edital)',
-        'orcamento' => 'Orçamento entre 3 sorteadas',
+        'proxima' => 'Mais próxima (override manual)',
+        'orcamento' => 'Orçamento entre as 3 mais próximas',
+        'manual' => 'Escolha manual',
     ];
 
     /**
@@ -81,7 +82,7 @@ final class Demanda
             areaConstruidaM2: self::numeroOuNull($data['areaConstruidaM2'] ?? null),
             areaTerrenoM2: self::numeroOuNull($data['areaTerrenoM2'] ?? null),
             precoEdital: filter_var($data['precoEdital'] ?? false, FILTER_VALIDATE_BOOLEAN),
-            modalidadeSolicitada: in_array($data['modalidadeSolicitada'] ?? 'auto', ['auto', 'sorteio', 'proxima', 'orcamento'], true)
+            modalidadeSolicitada: in_array($data['modalidadeSolicitada'] ?? 'auto', ['auto', 'sorteio', 'proxima', 'orcamento', 'manual'], true)
                 ? (string) ($data['modalidadeSolicitada'] ?? 'auto')
                 : 'auto',
             somenteCidade: filter_var($data['somenteCidade'] ?? false, FILTER_VALIDATE_BOOLEAN),
@@ -95,7 +96,7 @@ final class Demanda
      * Regra definida pela própria demanda:
      *   - Laudo Rural, Levantamento Topográfico, Georreferenciamento, ou área construída > 1.000 m²,
      *     ou terreno > 10.000 m² → orçamento entre 3 sorteadas (a mais barata leva);
-     *   - laudo com preço definido em edital → a mais próxima da demanda;
+     *   - laudo com preço definido em edital → sorteio com rodízio entre todas as aptas;
      *   - demais casos → sorteio com rodízio.
      *
      * @return array{codigo:string,motivo:string}
@@ -104,18 +105,18 @@ final class Demanda
     {
         $orcamento = array_values(array_intersect($this->atividadesCodigos, self::ATIVIDADES_ORCAMENTO));
         if ($orcamento !== []) {
-            return ['codigo' => 'orcamento', 'motivo' => 'Atividade ' . implode(', ', $orcamento) . ' exige orçamento entre 3 credenciadas.'];
+            return ['codigo' => 'orcamento', 'motivo' => 'Atividade ' . implode(', ', $orcamento) . ' exige orçamento entre as 3 credenciadas mais próximas.'];
         }
         if (($this->areaConstruidaM2 ?? 0) > self::LIMITE_AREA_CONSTRUIDA_M2) {
-            return ['codigo' => 'orcamento', 'motivo' => 'Área construída acima de 1.000 m² exige orçamento entre 3 credenciadas.'];
+            return ['codigo' => 'orcamento', 'motivo' => 'Área construída acima de 1.000 m² exige orçamento entre as 3 mais próximas.'];
         }
         if (($this->areaTerrenoM2 ?? 0) > self::LIMITE_AREA_TERRENO_M2) {
-            return ['codigo' => 'orcamento', 'motivo' => 'Terreno acima de 10.000 m² exige orçamento entre 3 credenciadas.'];
+            return ['codigo' => 'orcamento', 'motivo' => 'Terreno acima de 10.000 m² exige orçamento entre as 3 mais próximas.'];
         }
         if ($this->precoEdital) {
-            return ['codigo' => 'proxima', 'motivo' => 'Laudo com preço definido em edital: escolhe a credenciada mais próxima.'];
+            return ['codigo' => 'sorteio', 'motivo' => 'Laudo com preço definido em edital: sorteio com rodízio entre todas as credenciadas aptas.'];
         }
-        return ['codigo' => 'sorteio', 'motivo' => 'Sem preço de edital nem exigência de orçamento: sorteio com rodízio.'];
+        return ['codigo' => 'sorteio', 'motivo' => 'Sem exigência de orçamento: sorteio com rodízio entre as credenciadas aptas.'];
     }
 
     /** @return array{codigo:string,motivo:string,manual:bool} */

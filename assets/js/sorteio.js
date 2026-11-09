@@ -4,8 +4,9 @@
 (function () {
   const MODALIDADES = {
     sorteio: { titulo: 'Sorteio com rodízio', icone: 'shuffle' },
-    proxima: { titulo: 'Mais próxima (preço de edital)', icone: 'locate-fixed' },
-    orcamento: { titulo: 'Orçamento entre 3 sorteadas', icone: 'receipt' },
+    proxima: { titulo: 'Mais próxima (override manual)', icone: 'locate-fixed' },
+    orcamento: { titulo: 'Orçamento entre as 3 mais próximas', icone: 'receipt' },
+    manual: { titulo: 'Escolha manual', icone: 'hand' },
   };
   const ATIVIDADES_ORCAMENTO = ['C', 'D', 'E'];
 
@@ -52,11 +53,11 @@
   /** Espelha Demanda::modalidadeSugerida() no PHP. */
   function modalidadeSugerida(p) {
     const orc = p.atividadesCodigos.filter((c) => ATIVIDADES_ORCAMENTO.includes(c));
-    if (orc.length) return { codigo: 'orcamento', motivo: `Atividade ${orc.join(', ')} exige orçamento entre 3 credenciadas.` };
-    if (Number(p.areaConstruidaM2 || 0) > 1000) return { codigo: 'orcamento', motivo: 'Área construída acima de 1.000 m² exige orçamento entre 3 credenciadas.' };
-    if (Number(p.areaTerrenoM2 || 0) > 10000) return { codigo: 'orcamento', motivo: 'Terreno acima de 10.000 m² exige orçamento entre 3 credenciadas.' };
-    if (p.precoEdital) return { codigo: 'proxima', motivo: 'Laudo com preço definido em edital: escolhe a credenciada mais próxima.' };
-    return { codigo: 'sorteio', motivo: 'Sem preço de edital nem exigência de orçamento: sorteio com rodízio.' };
+    if (orc.length) return { codigo: 'orcamento', motivo: `Atividade ${orc.join(', ')} exige orçamento entre as 3 credenciadas mais próximas.` };
+    if (Number(p.areaConstruidaM2 || 0) > 1000) return { codigo: 'orcamento', motivo: 'Área construída acima de 1.000 m² exige orçamento entre as 3 mais próximas.' };
+    if (Number(p.areaTerrenoM2 || 0) > 10000) return { codigo: 'orcamento', motivo: 'Terreno acima de 10.000 m² exige orçamento entre as 3 mais próximas.' };
+    if (p.precoEdital) return { codigo: 'sorteio', motivo: 'Laudo com preço definido em edital: sorteio com rodízio entre todas as credenciadas aptas.' };
+    return { codigo: 'sorteio', motivo: 'Sem exigência de orçamento: sorteio com rodízio entre as credenciadas aptas.' };
   }
 
   function initDemandForm() {
@@ -100,12 +101,22 @@
     });
     form.uf.addEventListener('change', () => { regiaoManual = false; sugerirRegiao(); agendarPrevia(); });
 
+    function syncCityChips() {
+      const atual = (form.cidade.value || '').trim().toLowerCase();
+      document.querySelectorAll('.city-chip').forEach((chip) => {
+        const city = (chip.getAttribute('data-city') || '').trim().toLowerCase();
+        chip.classList.toggle('is-active', city !== '' && city === atual);
+      });
+    }
     document.querySelectorAll('.city-chip').forEach((chip) => {
       chip.addEventListener('click', () => {
         form.cidade.value = chip.getAttribute('data-city') || '';
+        syncCityChips();
         form.cidade.dispatchEvent(new Event('change', { bubbles: true }));
       });
     });
+    form.cidade.addEventListener('input', syncCityChips);
+    syncCityChips();
 
     form.querySelectorAll('input[name="atividadesCodigos[]"]').forEach((el) => {
       el.addEventListener('change', () => { syncAtividades(); atualizarModalidade(); agendarPrevia(); });
@@ -118,7 +129,7 @@
     function syncAtividades() {
       const n = form.querySelectorAll('input[name="atividadesCodigos[]"]:checked').length;
       const hint = document.getElementById('servicosCountHint');
-      if (hint) hint.textContent = n === 0 ? 'Nenhuma atividade selecionada' : (n === 1 ? '1 atividade selecionada' : `${n} atividades selecionadas`);
+      if (hint) hint.textContent = n === 0 ? 'Nenhuma selecionada' : (n === 1 ? '1 selecionada' : `${n} selecionadas`);
     }
 
     function atualizarModalidade() {
@@ -210,7 +221,19 @@
         if (cidadeRow) cidadeRow.hidden = !imp.restricaoCidade;
         setText('impCidade', imp.foraCidade);
         atualizarRestricaoCidade(imp.aptasNaCidade || 0);
-        if (status) status.textContent = 'Atualizado';
+        const precisaManual = Boolean(imp.redirecionarManual);
+        const manualBanner = document.getElementById('impManualBanner');
+        if (manualBanner) {
+          manualBanner.hidden = !precisaManual;
+          if (precisaManual) {
+            setText('impManualTitulo', imp.semEmpresasNaCidade
+              ? 'Não há empresas na cidade da demanda'
+              : 'Nenhuma empresa na margem de 200 km');
+            setText('impManualMsg', imp.mensagemCidade
+              || 'Use a escolha manual para selecionar uma credenciada.');
+          }
+        }
+        if (status) status.textContent = precisaManual ? 'Sem pool automático' : 'Atualizado';
       } catch (err) {
         if (atual === seq && status) status.textContent = 'Prévia indisponível';
       }

@@ -7,9 +7,11 @@ require_once __DIR__ . '/DrawService.php';
 /**
  * Controle das chamadas (rodízio geral).
  *
- * A empresa só entra no rodízio depois de ACEITAR a demanda (aba Standby).
+ * A empresa só entra no rodízio depois de ACEITAR a demanda (aba Standby),
+ * ou quando for marcada manualmente no cadastro como "já realizou serviço".
  * Recusa ou aceite pendente não contam — a credenciada segue apta aos próximos sorteios.
  * Quando todas as ativas tiverem aceitado ao menos uma demanda no ciclo, o ciclo recomeça.
+ * A marcação manual permanece até ser desmarcada (escolha manual continua liberada).
  */
 final class RodizioService
 {
@@ -19,9 +21,10 @@ final class RodizioService
 
     /**
      * @param list<string> $idsAtivas IDs das credenciadas ativas hoje
-     * @return array{ids:list<string>,inicioCiclo:?string,ciclo:int,totalAtivas:int}
+     * @param list<string> $idsMarcacaoManual IDs marcadas no cadastro como serviço já realizado
+     * @return array{ids:list<string>,idsMarcacaoManual:list<string>,inicioCiclo:?string,ciclo:int,totalAtivas:int}
      */
-    public function cicloAtual(array $idsAtivas): array
+    public function cicloAtual(array $idsAtivas, array $idsMarcacaoManual = []): array
     {
         $historico = array_values(array_filter(
             $this->drawService->listHistorico(),
@@ -51,8 +54,18 @@ final class RodizioService
             }
         }
 
+        $manual = [];
+        foreach ($idsMarcacaoManual as $id) {
+            $id = (string) $id;
+            if (isset($universo[$id])) {
+                $manual[$id] = true;
+                $chamadas[$id] = true;
+            }
+        }
+
         return [
             'ids' => array_keys($chamadas),
+            'idsMarcacaoManual' => array_keys($manual),
             'inicioCiclo' => $inicio,
             'ciclo' => $ciclo,
             'totalAtivas' => count($universo),

@@ -29,6 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'regioesMunicipiosCodigos' => $_POST['regioesMunicipiosCodigos'] ?? [],
         'estadosAtuacaoCodigos' => $_POST['estadosAtuacaoCodigos'] ?? [],
         'atendeAcima100km' => ($_POST['atendeAcima100km'] ?? '1') === '1',
+        'servicoRealizado' => isset($_POST['servicoRealizado']),
+        'servicoRealizadoObs' => $_POST['servicoRealizadoObs'] ?? '',
     ];
 
     try {
@@ -76,8 +78,12 @@ $valores = $empresa?->toArray() ?? [
     'regioesMunicipiosCodigos' => [],
     'estadosAtuacaoCodigos' => [],
     'atendeAcima100km' => true,
+    'servicoRealizado' => false,
+    'servicoRealizadoObs' => '',
+    'servicoRealizadoEm' => null,
 ];
 $atendeAcima = filter_var($valores['atendeAcima100km'] ?? true, FILTER_VALIDATE_BOOLEAN);
+$servicoRealizado = filter_var($valores['servicoRealizado'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
 $ufs = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 ?>
@@ -163,6 +169,14 @@ $ufs = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','P
           <label for="dataConvenio">Data do credenciamento</label>
           <input class="form-control" type="date" id="dataConvenio" name="dataConvenio" value="<?= e((string) $valores['dataConvenio']) ?>">
         </div>
+        <?php if ($isEdit): ?>
+          <div class="form-group">
+            <label>Cadastrada no sistema</label>
+            <input class="form-control" type="text" readonly
+              value="<?= !empty($valores['criadoEm']) ? e(format_datetime((string) $valores['criadoEm'])) : '—' ?>"
+              title="Data em que a empresa entrou neste sistema (não editável)">
+          </div>
+        <?php endif; ?>
         <div class="form-group">
           <label for="ordemCredenciamento">Ordem no credenciamento</label>
           <input class="form-control" type="number" id="ordemCredenciamento" name="ordemCredenciamento" min="0"
@@ -220,8 +234,39 @@ $ufs = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','P
     </div>
   </section>
 
+  <section class="panel" id="blocoServicoRealizado">
+    <div class="panel-header">
+      <h3>3. Serviço já realizado (rodízio)</h3>
+    </div>
+    <div class="panel-body">
+      <p class="field-hint" style="margin:0 0 0.85rem;">
+        <i data-lucide="repeat"></i>
+        Marque se a credenciada já atendeu alguma demanda fora do sistema. Ela entra no rodízio e
+        fica fora dos próximos <strong>sorteios automáticos</strong>. Na <strong>escolha manual</strong> continua podendo ser selecionada.
+      </p>
+      <label class="switch-row" style="margin-bottom:0.9rem;">
+        <input type="checkbox" id="servicoRealizado" name="servicoRealizado" value="1" <?= $servicoRealizado ? 'checked' : '' ?>>
+        <span>
+          <strong>Já realizou serviço — incluir no rodízio</strong>
+          <small>Desmarque quando quiser devolvê-la ao pool automático do ciclo.</small>
+        </span>
+      </label>
+      <div class="form-group" id="servicoRealizadoObsWrap">
+        <label for="servicoRealizadoObs">Observação do serviço *</label>
+        <textarea class="form-control" id="servicoRealizadoObs" name="servicoRealizadoObs" rows="3"
+          placeholder="Ex.: Atendeu demanda em Contagem em 03/2026 (contrato avulso)…"
+          <?= $servicoRealizado ? 'required' : '' ?>><?= e((string) ($valores['servicoRealizadoObs'] ?? '')) ?></textarea>
+        <?php if (!empty($valores['servicoRealizadoEm'])): ?>
+          <div class="field-hint" style="margin-top:0.45rem;">
+            Marcada em <?= e(format_datetime((string) $valores['servicoRealizadoEm'])) ?>.
+          </div>
+        <?php endif; ?>
+      </div>
+    </div>
+  </section>
+
   <section class="panel">
-    <div class="panel-header"><h3>3. Atividades habilitadas</h3></div>
+    <div class="panel-header"><h3>4. Atividades habilitadas</h3></div>
     <div class="panel-body">
       <div class="checkbox-grid">
         <?php foreach ($catalogo['atividades'] as $code => $label): ?>
@@ -238,7 +283,7 @@ $ufs = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','P
   </section>
 
   <section class="panel">
-    <div class="panel-header"><h3>4. Abrangência territorial</h3></div>
+    <div class="panel-header"><h3>5. Abrangência territorial</h3></div>
     <div class="panel-body">
       <p class="form-section-label">Distância de atendimento</p>
       <p class="field-hint" style="margin:0 0 0.6rem;">
@@ -249,15 +294,15 @@ $ufs = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','P
         <label class="choice-card">
           <input type="radio" name="atendeAcima100km" value="1" <?= $atendeAcima ? 'checked' : '' ?>>
           <span>
-            <strong>Atende acima de 100 km</strong>
+            <strong>Atende acima de 200 km</strong>
             <small>Participa de demandas a qualquer distância, desde que atenda a região.</small>
           </span>
         </label>
         <label class="choice-card">
           <input type="radio" name="atendeAcima100km" value="0" <?= $atendeAcima ? '' : 'checked' ?>>
           <span>
-            <strong>Atende somente até 100 km</strong>
-            <small>50 km de ida + 50 km de volta. Fica fora de demandas mais distantes.</small>
+            <strong>Atende somente até 200 km</strong>
+            <small>100 km de ida + 100 km de volta. Fica fora de demandas mais distantes.</small>
           </span>
         </label>
       </div>
@@ -319,9 +364,7 @@ $ufs = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','P
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('btnToggleStatus');
   const input = document.getElementById('status');
-  const panel = document.querySelector('.status-panel');
   if (!btn || !input) return;
-
   btn.addEventListener('click', () => {
     const ativa = input.value === 'ativa';
     const novo = ativa ? 'inativa' : 'ativa';
@@ -331,11 +374,22 @@ document.addEventListener('DOMContentLoaded', () => {
         : 'Reativar esta empresa? Ela voltará a ficar elegível nos sorteios.'
     );
     if (!ok) return;
-
     input.value = novo;
-    // Salva imediatamente o status junto com o restante do formulário
     btn.closest('form').requestSubmit();
   });
 });
 </script>
 <?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const chk = document.getElementById('servicoRealizado');
+  const obs = document.getElementById('servicoRealizadoObs');
+  const syncObs = () => {
+    if (!chk || !obs) return;
+    obs.required = chk.checked;
+  };
+  chk?.addEventListener('change', syncObs);
+  syncObs();
+});
+</script>

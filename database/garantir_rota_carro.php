@@ -63,7 +63,7 @@ foreach ($empresas as $e) {
 }
 $ok($comCarro >= 3, "pelo menos 3 rotas de carro apuradas ({$comCarro})");
 
-echo "\n2. Fluxo de elegibilidade (limite 100 km / mais próxima)\n";
+echo "\n2. Fluxo de elegibilidade (limite 200 km / mais próxima)\n";
 $demanda = Demanda::fromArray([
     'cidade' => 'Belo Horizonte',
     'uf' => 'MG',

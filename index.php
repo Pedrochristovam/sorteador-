@@ -28,6 +28,7 @@ $allowedPages = [
     'historico-detalhe',
     'auditoria',
     'standby',
+    'escolha-manual',
     'resultado',
     // Módulo Jurídico — Edital 01/2026
     'juridico-dashboard',
@@ -53,6 +54,7 @@ $pageTitles = [
     'historico-detalhe' => 'Detalhe do Sorteio',
     'auditoria' => 'Regulamentos & Auditoria',
     'standby' => 'Standby',
+    'escolha-manual' => 'Escolha manual',
     'resultado' => 'Resultado do Sorteio',
     'juridico-dashboard' => 'Módulo Jurídico',
     'juridico-sociedades' => 'Sociedades de Advogados',
@@ -82,6 +84,12 @@ if (!is_file($pageFile)) {
     $currentPage = 'dashboard';
     $pageTitle = 'Dashboard';
     $isJuridico = false;
+}
+
+// Fragmentos AJAX (ex.: troca de dossiê na auditoria sem recarregar a página)
+if ($currentPage === 'auditoria' && ($_GET['partial'] ?? '') === 'main') {
+    require $pageFile;
+    exit;
 }
 
 require __DIR__ . '/layouts/main.php';

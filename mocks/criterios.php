@@ -30,8 +30,8 @@ return [
     ],
     [
         'codigo' => 'limite_100km',
-        'nome' => 'Limite de deslocamento (100 km ida e volta)',
-        'descricao' => 'Empresa cadastrada para atender só até 100 km (50 km ida + 50 km volta) sai quando a rota de carro até a demanda passa desse limite.',
+        'nome' => 'Limite de deslocamento (200 km ida e volta)',
+        'descricao' => 'Empresa cadastrada para atender só até 200 km ida e volta (100 km ida + 100 km volta) sai quando a rota de carro até a demanda passa desse limite.',
         'obrigatorio' => true,
         'tipo' => 'distance',
     ],

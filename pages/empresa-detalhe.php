@@ -11,8 +11,25 @@ if (!$empresa): ?>
 
 $hash = integrity_hash_for(json_encode($empresa->toArray(), JSON_UNESCAPED_UNICODE));
 
-$auditService = new AuditService();
-$participacoes = $auditService->listByEmpresaId($empresa->id);
+$historico = (new DrawService())->historicoEmpresa($empresa->id);
+$resumo = $historico['resumo'];
+$itens = $historico['itens'];
+
+$aceitos = array_values(array_filter($itens, static fn(array $i): bool => $i['papel'] === 'aceito'));
+$recusados = array_values(array_filter($itens, static fn(array $i): bool => $i['papel'] === 'recusado'));
+$pendentes = array_values(array_filter($itens, static fn(array $i): bool => $i['papel'] === 'pendente'));
+$demais = array_values(array_filter($itens, static fn(array $i): bool => !in_array($i['papel'], ['aceito', 'recusado', 'pendente'], true)));
+
+$papelMeta = static function (string $papel): array {
+    return match ($papel) {
+        'aceito' => ['label' => 'Aceitou o serviço', 'tone' => 'success', 'icon' => 'check-circle-2'],
+        'recusado' => ['label' => 'Recusou o serviço', 'tone' => 'danger', 'icon' => 'x-circle'],
+        'pendente' => ['label' => 'Aguardando aceite', 'tone' => 'warning', 'icon' => 'hourglass'],
+        'selecionada' => ['label' => 'Selecionada', 'tone' => 'success', 'icon' => 'trophy'],
+        'orcamento' => ['label' => 'Convidada a orçar', 'tone' => 'info', 'icon' => 'receipt'],
+        default => ['label' => 'Participou do sorteio', 'tone' => 'neutral', 'icon' => 'users'],
+    };
+};
 ?>
 
 <?php if (!empty($_GET['saved'])): ?>
@@ -48,6 +65,9 @@ $participacoes = $auditService->listByEmpresaId($empresa->id);
         Contrato #<?= e($empresa->numeroContrato ?: '—') ?>
         · <?= e($empresa->cidade) ?>/<?= e($empresa->uf) ?>
         · Credenciada em <?= e(format_date($empresa->dataConvenio)) ?>
+        <?php if ($empresa->criadoEm): ?>
+          · Cadastrada no sistema em <?= e(format_datetime($empresa->criadoEm)) ?>
+        <?php endif; ?>
         <?php if (!$empresa->isAtiva()): ?>
           · <strong class="text-danger">Fora dos sorteios</strong>
         <?php endif; ?>
@@ -73,26 +93,24 @@ $participacoes = $auditService->listByEmpresaId($empresa->id);
 
 <div class="kpi-grid kpi-grid-empresas">
   <article class="kpi-card kpi-blue">
-    <div class="kpi-label">Contrato</div>
-    <div class="kpi-value" style="font-size:1.45rem;">#<?= e($empresa->numeroContrato ?: '—') ?></div>
-    <div class="kpi-hint">Ordem <?= (int) $empresa->ordemCredenciamento ?: '—' ?></div>
+    <div class="kpi-label">Participações</div>
+    <div class="kpi-value"><?= (int) $resumo['participacoes'] ?></div>
+    <div class="kpi-hint">Sorteios em que entrou</div>
   </article>
   <article class="kpi-card kpi-green">
-    <div class="kpi-label">Atividades</div>
-    <div class="kpi-value"><?= count($empresa->servicos) ?></div>
-    <div class="kpi-hint">Habilitadas no credenciamento</div>
+    <div class="kpi-label">Aceitos</div>
+    <div class="kpi-value"><?= (int) $resumo['aceitos'] ?></div>
+    <div class="kpi-hint">Serviços confirmados</div>
   </article>
   <article class="kpi-card kpi-red">
-    <div class="kpi-label">Abrangência</div>
-    <div class="kpi-value"><?= count($empresa->regioesMunicipiosCodigos) + count($empresa->estadosAtuacaoCodigos) ?></div>
-    <div class="kpi-hint">Regiões + estados</div>
+    <div class="kpi-label">Recusas</div>
+    <div class="kpi-value"><?= (int) $resumo['recusados'] ?></div>
+    <div class="kpi-hint">Com ou sem motivo</div>
   </article>
   <article class="kpi-card kpi-last">
-    <div class="kpi-label">Status Cadastral</div>
-    <div class="kpi-last-footer" style="margin-top:0.7rem;">
-      <span class="chip-success"><i data-lucide="shield-check"></i> Homologada</span>
-    </div>
-    <div class="kpi-hint" style="margin-top:0.55rem;">ID <?= e($empresa->id) ?></div>
+    <div class="kpi-label">Pendentes</div>
+    <div class="kpi-value"><?= (int) $resumo['pendentes'] ?></div>
+    <div class="kpi-hint">Aguardando Standby</div>
   </article>
 </div>
 
@@ -133,15 +151,45 @@ $participacoes = $auditService->listByEmpresaId($empresa->id);
           <div class="lbl">Data do credenciamento</div>
           <div class="val"><?= e(format_date($empresa->dataConvenio)) ?></div>
         </div>
+        <div class="detail-item">
+          <div class="lbl">Cadastrada no sistema</div>
+          <div class="val"><?= $empresa->criadoEm ? e(format_datetime($empresa->criadoEm)) : '—' ?></div>
+        </div>
+        <?php if ($empresa->atualizadoEm): ?>
+          <div class="detail-item">
+            <div class="lbl">Última atualização</div>
+            <div class="val"><?= e(format_datetime($empresa->atualizadoEm)) ?></div>
+          </div>
+        <?php endif; ?>
       </div>
 
       <?php if ($empresa->observacoes): ?>
         <div class="alert alert-info" style="margin-top:1.25rem;margin-bottom:0;">
-          <strong>Observações:</strong> <?= e($empresa->observacoes) ?>
+          <strong>Observações cadastrais:</strong> <?= e($empresa->observacoes) ?>
         </div>
       <?php endif; ?>
     </div>
   </section>
+
+  <?php if ($empresa->servicoRealizado): ?>
+  <section class="panel">
+    <div class="panel-header">
+      <h3><i data-lucide="repeat"></i> No rodízio (marcação manual)</h3>
+      <span class="tag tag-rodizio">Fora dos sorteios automáticos</span>
+    </div>
+    <div class="panel-body">
+      <p style="margin:0 0 0.65rem;color:var(--ink-soft);line-height:1.45;">
+        <?= e($empresa->servicoRealizadoObs ?: 'Serviço já realizado — sem detalhe informado.') ?>
+      </p>
+      <div class="muted" style="font-size:0.85rem;">
+        <?php if ($empresa->servicoRealizadoEm): ?>
+          Marcada em <?= e(format_datetime($empresa->servicoRealizadoEm)) ?> ·
+        <?php endif; ?>
+        Continua disponível na <a href="<?= e(page_url('escolha-manual')) ?>">escolha manual</a>.
+      </div>
+    </div>
+  </section>
+  <?php endif; ?>
 
   <section class="panel">
     <div class="panel-header"><h3>Operação &amp; Abrangência</h3></div>
@@ -159,9 +207,9 @@ $participacoes = $auditService->listByEmpresaId($empresa->id);
       <div class="lbl" style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);font-weight:650;">Distância de atendimento</div>
       <div class="tags-wrap" style="margin-top:0.5rem;margin-bottom:1.2rem;">
         <?php if ($empresa->atendeAcima100km): ?>
-          <span class="tag tag-km-livre"><i data-lucide="route"></i> Atende acima de 100 km</span>
+          <span class="tag tag-km-livre"><i data-lucide="route"></i> Atende acima de 200 km</span>
         <?php else: ?>
-          <span class="tag tag-km-limite"><i data-lucide="route"></i> Somente até 100 km (50 ida + 50 volta)</span>
+          <span class="tag tag-km-limite"><i data-lucide="route"></i> Somente até 200 km (100 ida + 100 volta)</span>
         <?php endif; ?>
       </div>
 
@@ -186,60 +234,114 @@ $participacoes = $auditService->listByEmpresaId($empresa->id);
   </section>
 </div>
 
-<section class="panel" style="margin-top:1.25rem;">
+<?php
+$renderCard = static function (array $item) use ($papelMeta): void {
+    $meta = $papelMeta($item['papel']);
+    $dem = $item['demanda'];
+    $sid = $item['sorteioId'];
+    ?>
+    <article class="emp-hist-card tone-<?= e($meta['tone']) ?>">
+      <header class="emp-hist-head">
+        <div>
+          <span class="badge badge-<?= e($meta['tone'] === 'info' ? 'neutral' : $meta['tone']) ?>">
+            <i data-lucide="<?= e($meta['icon']) ?>"></i> <?= e($meta['label']) ?>
+          </span>
+          <span class="modalidade-pill modalidade-<?= e($item['modalidade']) ?>"><?= e(modalidade_label($item['modalidade'])) ?></span>
+        </div>
+        <time class="muted"><?= e(format_datetime($item['dataHora'] ?: null)) ?></time>
+      </header>
+
+      <div class="emp-hist-body">
+        <strong class="mono"><?= e($sid) ?></strong>
+        <p>
+          <?= e(($dem['cidade'] ?: '—') . ($dem['uf'] ? '/' . $dem['uf'] : '')) ?>
+          <?php if ($dem['endereco'] !== ''): ?> · <?= e($dem['endereco']) ?><?php endif; ?>
+        </p>
+        <?php if ($dem['servico'] !== ''): ?>
+          <p class="muted">Serviço: <?= e($dem['servico']) ?></p>
+        <?php endif; ?>
+        <div class="emp-hist-meta">
+          <?php if ($item['distanciaKm'] !== null): ?>
+            <span><i data-lucide="route"></i> <?= e(format_km((float) $item['distanciaKm'])) ?></span>
+          <?php endif; ?>
+          <?php if ($item['valorOrcamento'] !== null && $item['valorOrcamento'] !== ''): ?>
+            <span><i data-lucide="banknote"></i> <?= e(format_moeda((float) $item['valorOrcamento'])) ?></span>
+          <?php endif; ?>
+          <?php if ($item['usuarioNome'] !== ''): ?>
+            <span><i data-lucide="user"></i> Operador: <?= e($item['usuarioNome']) ?></span>
+          <?php endif; ?>
+        </div>
+
+        <?php if (in_array($item['papel'], ['aceito', 'recusado', 'pendente', 'selecionada'], true)): ?>
+          <div class="emp-hist-aceite">
+            <?php if (!empty($item['aceiteEm'])): ?>
+              <div><strong>Decisão em:</strong> <?= e(format_datetime($item['aceiteEm'])) ?></div>
+            <?php endif; ?>
+            <?php if ($item['aceiteUsuario'] !== ''): ?>
+              <div><strong>Registrado por:</strong> <?= e($item['aceiteUsuario']) ?></div>
+            <?php endif; ?>
+            <?php if ($item['aceiteObservacao'] !== ''): ?>
+              <div class="emp-hist-obs">
+                <strong><?= $item['papel'] === 'recusado' ? 'Motivo da recusa' : 'Observação' ?>:</strong>
+                <?= e($item['aceiteObservacao']) ?>
+              </div>
+            <?php elseif ($item['papel'] === 'recusado'): ?>
+              <div class="muted">Recusa sem motivo informado.</div>
+            <?php elseif ($item['papel'] === 'aceito'): ?>
+              <div class="muted">Aceite sem observação adicional.</div>
+            <?php endif; ?>
+          </div>
+        <?php endif; ?>
+      </div>
+
+      <footer class="emp-hist-actions">
+        <a class="btn btn-outline btn-sm" href="<?= e(page_url('historico-detalhe', ['id' => $sid])) ?>">Ver sorteio</a>
+        <a class="btn btn-ghost btn-sm" href="<?= e(page_url('auditoria', ['sorteio' => $sid])) ?>">Auditoria</a>
+        <?php if ($item['papel'] === 'pendente'): ?>
+          <a class="btn btn-accent btn-sm" href="<?= e(page_url('standby')) ?>">Abrir Standby</a>
+        <?php endif; ?>
+      </footer>
+    </article>
+    <?php
+};
+?>
+
+<section class="panel emp-hist-panel" style="margin-top:1.25rem;" id="historico-operacional">
   <div class="panel-header">
-    <h3>Participação em sorteios &amp; auditoria</h3>
-    <a class="btn btn-ghost btn-sm" href="<?= e(page_url('auditoria')) ?>">Abrir painel de auditoria</a>
+    <h3>Histórico operacional</h3>
+    <span class="muted"><?= (int) $resumo['participacoes'] ?> registro(s) · <?= (int) $resumo['selecionada'] ?> vez(es) selecionada</span>
   </div>
   <div class="panel-body">
-    <?php if ($participacoes === []): ?>
-      <div class="empty-state">Esta empresa ainda não consta em operações auditadas.</div>
+    <?php if ($itens === []): ?>
+      <div class="empty-state">Esta empresa ainda não participou de nenhum sorteio, escolha manual ou orçamento.</div>
     <?php else: ?>
-      <div class="table-wrap">
-        <table class="data-table data-table-premium">
-          <thead>
-            <tr>
-              <th>Sorteio</th>
-              <th>Data</th>
-              <th>Papel</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach ($participacoes as $log): ?>
-              <?php
-                $sid = (string) ($log['sorteioId'] ?? '');
-                $papel = 'Participante';
-                if (($log['resultadoFinal']['id'] ?? '') === $empresa->id) {
-                    $papel = 'Contemplada';
-                } else {
-                    foreach ($log['empresasEliminadas'] ?? [] as $elim) {
-                        if (($elim['id'] ?? $elim['empresaId'] ?? '') === $empresa->id) {
-                            $papel = 'Eliminada';
-                            break;
-                        }
-                    }
-                }
-              ?>
-              <tr>
-                <td class="mono"><?= e($sid) ?></td>
-                <td><?= e(format_datetime($log['dataHora'] ?? null)) ?></td>
-                <td>
-                  <span class="status-pill <?= $papel === 'Contemplada' ? 'success' : ($papel === 'Eliminada' ? 'danger' : '') ?>">
-                    <?= e($papel) ?>
-                  </span>
-                </td>
-                <td>
-                  <div class="row-actions">
-                    <a class="btn btn-outline btn-sm" href="<?= e(page_url('auditoria', ['sorteio' => $sid])) ?>">Auditoria</a>
-                    <a class="btn btn-ghost btn-sm" href="<?= e(page_url('historico-detalhe', ['id' => $sid])) ?>">Histórico</a>
-                  </div>
-                </td>
-              </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      </div>
+      <?php if ($pendentes !== []): ?>
+        <h4 class="emp-hist-section-title"><i data-lucide="hourglass"></i> Aguardando aceite</h4>
+        <div class="emp-hist-grid">
+          <?php foreach ($pendentes as $item) { $renderCard($item); } ?>
+        </div>
+      <?php endif; ?>
+
+      <?php if ($aceitos !== []): ?>
+        <h4 class="emp-hist-section-title"><i data-lucide="check-circle-2"></i> Serviços aceitos</h4>
+        <div class="emp-hist-grid">
+          <?php foreach ($aceitos as $item) { $renderCard($item); } ?>
+        </div>
+      <?php endif; ?>
+
+      <?php if ($recusados !== []): ?>
+        <h4 class="emp-hist-section-title"><i data-lucide="x-circle"></i> Serviços recusados</h4>
+        <div class="emp-hist-grid">
+          <?php foreach ($recusados as $item) { $renderCard($item); } ?>
+        </div>
+      <?php endif; ?>
+
+      <?php if ($demais !== []): ?>
+        <h4 class="emp-hist-section-title"><i data-lucide="shuffle"></i> Demais participações</h4>
+        <div class="emp-hist-grid">
+          <?php foreach ($demais as $item) { $renderCard($item); } ?>
+        </div>
+      <?php endif; ?>
     <?php endif; ?>
   </div>
 </section>

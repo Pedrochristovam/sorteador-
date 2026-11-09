@@ -13,7 +13,8 @@ require_once dirname(__DIR__) . '/config/Database.php';
  * Modalidades (definidas pela demanda):
  *   - sorteio   : sorteio de 1 entre as aptas que ainda não foram chamadas no ciclo do rodízio;
  *                 se todas já foram chamadas (ex.: é a única que realiza a atividade), sorteia entre todas as aptas.
- *   - proxima   : laudo com preço de edital — a apta de menor rota de carro leva (rodízio não se aplica).
+ *   - proxima   : override manual — a apta de menor rota de carro leva (rodízio não se aplica).
+ *                 Preço de edital NÃO usa esta modalidade: vai para sorteio com rodízio.
  *   - orcamento : sorteio de 3 aptas (priorizando quem não foi chamado no ciclo); o operador registra
  *                 os orçamentos e a mais barata leva.
  * A aleatoriedade usa random_int (CSPRNG) com embaralhamento Fisher-Yates.
@@ -193,33 +194,154 @@ final class DrawService
         ];
     }
 
-    /** @param list<array> $elegiveis */
+    /**
+     * Orçamento: participa só quem está entre as 3 mais próximas (rota de carro).
+     * Não embaralha o universo inteiro — o pool é estritamente as 3 mais perto do destino.
+     *
+     * @param list<array> $elegiveis
+     */
     private function sortearParaOrcamento(array $elegiveis): array
     {
-        $livres = array_values(array_filter($elegiveis, static fn(array $e): bool => empty($e['emRodizio'])));
-        $chamadas = array_values(array_filter($elegiveis, static fn(array $e): bool => !empty($e['emRodizio'])));
+        $comRota = array_values(array_filter(
+            $elegiveis,
+            static fn(array $e): bool => ($e['distanciaKm'] ?? null) !== null
+                && in_array($e['distanciaFonte'] ?? '', ['google', 'osm'], true)
+        ));
+        usort(
+            $comRota,
+            static fn(array $a, array $b): int => [(float) $a['distanciaKm'], (int) ($a['ordemCredenciamento'] ?? 0)]
+                <=> [(float) $b['distanciaKm'], (int) ($b['ordemCredenciamento'] ?? 0)]
+        );
 
-        $escolhidas = array_slice($this->embaralhar($livres), 0, self::QTD_ORCAMENTO);
-        $nota = '';
+        $livres = array_values(array_filter($comRota, static fn(array $e): bool => empty($e['emRodizio'])));
+        $chamadas = array_values(array_filter($comRota, static fn(array $e): bool => !empty($e['emRodizio'])));
+
+        // As 3 mais próximas livres (já ordenadas por km)
+        $escolhidas = array_slice($livres, 0, self::QTD_ORCAMENTO);
+        $nota = 'Orçamento somente entre as 3 credenciadas mais próximas do destino (rota de carro).';
         if (count($escolhidas) < self::QTD_ORCAMENTO && $chamadas !== []) {
             $faltam = self::QTD_ORCAMENTO - count($escolhidas);
-            $escolhidas = array_merge($escolhidas, array_slice($this->embaralhar($chamadas), 0, $faltam));
-            $nota = 'Exceção ao rodízio: não havia 3 aptas fora do ciclo; completado com credenciadas já chamadas.';
+            $escolhidas = array_merge($escolhidas, array_slice($chamadas, 0, $faltam));
+            // Reordena o conjunto final pela distância (mantém “as 3 mais perto” mesmo com exceção)
+            usort(
+                $escolhidas,
+                static fn(array $a, array $b): int => [(float) $a['distanciaKm'], (int) ($a['ordemCredenciamento'] ?? 0)]
+                    <=> [(float) $b['distanciaKm'], (int) ($b['ordemCredenciamento'] ?? 0)]
+            );
+            $escolhidas = array_slice($escolhidas, 0, self::QTD_ORCAMENTO);
+            $nota .= ' Completado com já chamadas no rodízio por falta de 3 livres próximas.';
         }
         if (count($escolhidas) < self::QTD_ORCAMENTO) {
-            $nota = trim($nota . sprintf(' Só %d credenciada(s) apta(s) para esta demanda — orçamento com menos de 3.', count($escolhidas)));
+            $nota = trim($nota . sprintf(' Só %d credenciada(s) com rota apurada — orçamento com menos de 3.', count($escolhidas)));
+        }
+        if ($escolhidas === []) {
+            throw new RuntimeException('Não há credenciadas com rota de carro até a demanda para montar o orçamento entre as 3 mais próximas.');
         }
 
         $sorteadas = array_map(fn(array $e): array => $this->resumoEmpresa($e), $escolhidas);
+        $ranking = array_map(
+            fn(array $e, int $i): array => $this->resumoEmpresa($e) + ['posicao' => $i + 1],
+            $escolhidas,
+            array_keys($escolhidas)
+        );
 
         return [
             'selecionada' => null,
             'sorteadas' => $sorteadas,
-            'participantes' => $livres !== [] && count($livres) >= self::QTD_ORCAMENTO ? $livres : $elegiveis,
-            'ranking' => [],
+            // Participam só as 3 — não o ranking completo de aptas
+            'participantes' => array_map(fn(array $e): array => $this->resumoEmpresa($e) + [
+                'emRodizio' => !empty($e['emRodizio']),
+                'distanciaKm' => $e['distanciaKm'] ?? null,
+            ], $escolhidas),
+            'ranking' => $ranking,
             'rodizioIds' => array_column($sorteadas, 'id'),
             'nota' => $nota,
         ];
+    }
+
+    /**
+     * Escolha manual: operador seleciona a empresa entre as mais próximas da demanda.
+     *
+     * @param array $empresaSelecionada resumo da empresa (id, nome, …)
+     * @param list<array> $rankingProxima lista ordenada por rota de carro
+     */
+    public function registrarEscolhaManual(array $demanda, array $empresaSelecionada, array $rankingProxima = [], array $metricas = []): array
+    {
+        if (empty($empresaSelecionada['id'])) {
+            throw new InvalidArgumentException('Selecione uma empresa.');
+        }
+
+        $usuario = current_user();
+        $agora = (new DateTimeImmutable('now', new DateTimeZone(app_config('timezone', 'America/Sao_Paulo'))))
+            ->format('Y-m-d H:i:s');
+        $sorteioId = generate_id('SRT');
+        $seed = bin2hex(random_bytes(16));
+
+        $participantes = array_map(function (array $e): array {
+            $r = $this->resumoEmpresa($e);
+            return $r + [
+                'emRodizio' => !empty($e['emRodizio']),
+                'distanciaKm' => $e['distanciaKm'] ?? $r['distanciaKm'] ?? null,
+            ];
+        }, $rankingProxima !== [] ? $rankingProxima : [$empresaSelecionada]);
+
+        $payloadIntegridade = json_encode([
+            'sorteioId' => $sorteioId,
+            'dataHora' => $agora,
+            'modalidade' => 'manual',
+            'selecionada' => $empresaSelecionada['id'],
+            'seed' => $seed,
+        ], JSON_UNESCAPED_UNICODE);
+        $hash = 'sha256:' . hash('sha256', (string) $payloadIntegridade);
+
+        $demanda = $demanda + [
+            'modalidade' => 'manual',
+            'modalidadeMotivo' => 'Escolha manual pelo operador entre as credenciadas mais próximas.',
+        ];
+
+        $sorteio = [
+            'id' => $sorteioId,
+            'dataHora' => $agora,
+            'demanda' => $demanda,
+            'participantes' => $participantes,
+            'empresaSelecionada' => $empresaSelecionada,
+            'status' => 'aguardando_aceite',
+            'usuarioId' => (string) ($usuario['id'] ?? ''),
+            'usuarioNome' => (string) ($usuario['nome'] ?? ''),
+            'criteriosUtilizados' => $metricas['criteriosUtilizados'] ?? ['Escolha manual'],
+            'totalAnalisadas' => (int) ($metricas['totalAnalisadas'] ?? count($participantes)),
+            'totalEliminadas' => (int) ($metricas['totalEliminadas'] ?? 0),
+            'totalElegiveis' => (int) ($metricas['totalElegiveis'] ?? count($participantes)),
+            'modalidade' => 'manual',
+            'modalidadeMotivo' => $demanda['modalidadeMotivo'],
+            'sorteadas' => [$empresaSelecionada],
+            'orcamentos' => [],
+            'ranking' => array_slice(array_map(
+                static fn(array $e, int $i): array => [
+                    'id' => $e['empresaId'] ?? $e['id'] ?? '',
+                    'nome' => $e['nome'] ?? '',
+                    'distanciaKm' => $e['distanciaKm'] ?? null,
+                    'posicao' => $i + 1,
+                ],
+                $rankingProxima,
+                array_keys($rankingProxima)
+            ), 0, 10),
+            'rodizioIds' => [],
+            'rodizioPropostos' => [(string) $empresaSelecionada['id']],
+            'rodizioNota' => 'Escolha manual: entra no rodízio somente após o aceite na aba Standby.',
+            'aceiteStatus' => 'pendente',
+            'hashIntegridade' => $hash,
+            'seedReferencia' => 'seed:' . $seed,
+            'modoSorteio' => 'manual',
+        ];
+
+        $this->persistirSessao($sorteio, [
+            'mode' => 'escolha-manual',
+            'hashIntegridade' => $hash,
+            'seedReferencia' => 'seed:' . $seed,
+        ]);
+
+        return $sorteio;
     }
 
     /**
@@ -382,6 +504,121 @@ final class DrawService
             }
         }
         return null;
+    }
+
+    /**
+     * Histórico operacional da empresa: participações, vitórias, aceites e recusas com observação.
+     *
+     * @return array{
+     *   resumo: array{participacoes:int,selecionada:int,aceitos:int,recusados:int,pendentes:int,orcamentos:int},
+     *   itens: list<array>
+     * }
+     */
+    public function historicoEmpresa(string $empresaId): array
+    {
+        $empresaId = trim($empresaId);
+        $itens = [];
+
+        foreach ($this->listHistorico() as $s) {
+            $selecionadaId = (string) ($s['empresaSelecionada']['id'] ?? '');
+            $foiSelecionada = $selecionadaId === $empresaId;
+
+            $emParticipantes = false;
+            foreach ($s['participantes'] ?? [] as $p) {
+                if ((string) ($p['id'] ?? $p['empresaId'] ?? '') === $empresaId) {
+                    $emParticipantes = true;
+                    break;
+                }
+            }
+
+            $emSorteadas = false;
+            $valorOrcamento = null;
+            foreach ($s['sorteadas'] ?? [] as $p) {
+                if ((string) ($p['id'] ?? $p['empresaId'] ?? '') === $empresaId) {
+                    $emSorteadas = true;
+                    if (isset($p['valor'])) {
+                        $valorOrcamento = $p['valor'];
+                    }
+                    break;
+                }
+            }
+            if (!$emSorteadas) {
+                foreach ($s['orcamentos'] ?? [] as $o) {
+                    if ((string) ($o['id'] ?? '') === $empresaId) {
+                        $emSorteadas = true;
+                        $valorOrcamento = $o['valor'] ?? null;
+                        break;
+                    }
+                }
+            }
+
+            if (!$foiSelecionada && !$emParticipantes && !$emSorteadas) {
+                continue;
+            }
+
+            $status = (string) ($s['status'] ?? '');
+            $aceite = (string) ($s['aceiteStatus'] ?? '');
+            $modalidade = (string) ($s['modalidade'] ?? 'sorteio');
+            $papel = 'participante';
+
+            if ($foiSelecionada) {
+                if ($status === 'recusado' || $aceite === 'recusado') {
+                    $papel = 'recusado';
+                } elseif ($status === 'aguardando_aceite' || $aceite === 'pendente') {
+                    $papel = 'pendente';
+                } elseif ($status === 'concluido' || $aceite === 'aceito') {
+                    $papel = 'aceito';
+                } else {
+                    $papel = 'selecionada';
+                }
+            } elseif ($emSorteadas && $modalidade === 'orcamento') {
+                $papel = 'orcamento';
+            }
+
+            $demanda = is_array($s['demanda'] ?? null) ? $s['demanda'] : [];
+            $sel = is_array($s['empresaSelecionada'] ?? null) ? $s['empresaSelecionada'] : [];
+
+            $itens[] = [
+                'sorteioId' => (string) ($s['id'] ?? ''),
+                'dataHora' => (string) ($s['dataHora'] ?? ''),
+                'modalidade' => $modalidade,
+                'status' => $status,
+                'papel' => $papel,
+                'foiSelecionada' => $foiSelecionada,
+                'demanda' => [
+                    'cidade' => (string) ($demanda['cidade'] ?? ''),
+                    'uf' => (string) ($demanda['uf'] ?? ''),
+                    'endereco' => (string) ($demanda['endereco'] ?? ''),
+                    'servico' => (string) ($demanda['servicoNecessario'] ?? ($demanda['servicosNecessarios'][0] ?? '')),
+                    'regiao' => trim(($demanda['regiaoCodigo'] ?? '') . ' ' . ($demanda['regiaoNome'] ?? '')),
+                ],
+                'distanciaKm' => $foiSelecionada
+                    ? ($sel['distanciaKm'] ?? null)
+                    : null,
+                'valorOrcamento' => $valorOrcamento,
+                'aceiteStatus' => $aceite !== '' ? $aceite : null,
+                'aceiteEm' => $s['aceiteEm'] ?? null,
+                'aceiteObservacao' => trim((string) ($s['aceiteObservacao'] ?? '')),
+                'aceiteUsuario' => (string) ($s['aceiteUsuario'] ?? ''),
+                'usuarioNome' => (string) ($s['usuarioNome'] ?? ''),
+            ];
+        }
+
+        usort($itens, static fn(array $a, array $b): int => strcmp((string) $b['dataHora'], (string) $a['dataHora']));
+
+        $contar = static fn(string $papel) => count(array_filter($itens, static fn(array $i): bool => $i['papel'] === $papel));
+
+        return [
+            'resumo' => [
+                'participacoes' => count($itens),
+                'selecionada' => count(array_filter($itens, static fn(array $i): bool => !empty($i['foiSelecionada']))),
+                'aceitos' => $contar('aceito'),
+                'recusados' => $contar('recusado'),
+                'pendentes' => $contar('pendente'),
+                'orcamentos' => $contar('orcamento'),
+            ],
+            'itens' => $itens,
+        ];
     }
 
     /** Persiste sorteio (MySQL ou arquivo). */

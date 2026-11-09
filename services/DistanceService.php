@@ -7,12 +7,12 @@ require_once dirname(__DIR__) . '/config/Database.php';
 /**
  * Distância por ROTA DE CARRO entre as empresas e o endereço da demanda.
  *
- * Nunca usa linha reta (haversine) para decidir elegibilidade, ranking ou limite de 100 km.
+ * Nunca usa linha reta (haversine) para decidir elegibilidade, ranking ou limite de 200 km.
  * Só entram no sistema distâncias vindas de:
  *   - google : Google Maps Distance Matrix com mode=driving (GOOGLE_MAPS_API_KEY no .env)
  *   - osm    : OpenStreetMap Nominatim (geocode) + OSRM profile=driving (sem chave)
  * Se a rota de carro falhar, km fica null (indisponível) — a empresa não é ranqueada por
- * proximidade e o limite de 100 km não a elimina por estimativa.
+ * proximidade e o limite de 200 km não a elimina por estimativa.
  * Cache em storage/geo_cache.json (somente rotas google/osm são gravadas).
  */
 final class DistanceService

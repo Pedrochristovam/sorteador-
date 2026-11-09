@@ -15,13 +15,16 @@ require_once __DIR__ . '/RodizioService.php';
  * Elegibilidade do Sorteador de Engenharia.
  *
  * Ordem: atividade habilitada, credenciado ativo, região da demanda, documentação;
- * depois a rota de carro (só para quem passou) e o limite de 100 km ida e volta;
- * por fim a restrição opcional às sediadas na cidade da demanda.
- * O rodízio não elimina aqui: só marca quem já foi chamado no ciclo.
+ * depois a rota de carro e o limite de 200 km ida e volta (100 km ida + 100 km volta);
+ * no sorteio automático, se houver credenciada na cidade da demanda, só entram as da cidade
+ * dentro desse limite — senão o fluxo aponta para escolha manual.
+ * O rodízio não elimina aqui: só marca quem já foi chamado no ciclo (exceto na escolha manual).
  */
 final class EligibilityService
 {
-    public const LIMITE_IDA_VOLTA_KM = 100.0;
+    /** Margem operacional: 100 km de ida + 100 km de volta. */
+    public const LIMITE_IDA_KM = 100.0;
+    public const LIMITE_IDA_VOLTA_KM = 200.0;
 
     private CompanyService $companyService;
     private DistanceService $distanceService;
@@ -56,7 +59,7 @@ final class EligibilityService
             $origens
         );
 
-        // 3) Limite de 100 km ida e volta
+        // 3) Limite de 200 km ida e volta (100 + 100) — cadastro "até o limite"
         $aplicaLimite = in_array('limite_100km', $codigosAtivos, true);
         foreach ($empresas as $empresa) {
             $av = &$avaliacoes[$empresa->id];
@@ -66,8 +69,13 @@ final class EligibilityService
                 unset($av);
                 continue;
             }
-            [$ok, $motivo] = $this->checkLimite100km($empresa, $rota, $av['aprovada']);
-            $av['criterios'][] = ['codigo' => 'limite_100km', 'nome' => 'Limite de deslocamento (100 km ida e volta)', 'atendido' => $ok, 'motivo' => $motivo];
+            [$ok, $motivo] = $this->checkLimiteDeslocamento($empresa, $rota, $av['aprovada']);
+            $av['criterios'][] = [
+                'codigo' => 'limite_100km',
+                'nome' => 'Limite de deslocamento (200 km ida e volta)',
+                'atendido' => $ok,
+                'motivo' => $motivo,
+            ];
             if (!$ok) {
                 $av['aprovada'] = false;
                 $av['motivos'][] = $motivo;
@@ -75,7 +83,7 @@ final class EligibilityService
             unset($av);
         }
 
-        // 4) Restrição opcional às sediadas na cidade da demanda (vale com 2 ou mais)
+        // 4) Restrição opcional às sediadas na cidade (checkbox do formulário)
         $cidadeDemanda = normalizar_texto($demanda->cidade);
         $naCidade = array_values(array_filter(
             $empresas,
@@ -98,13 +106,18 @@ final class EligibilityService
             }
         }
 
-        // 5) Rodízio geral (apenas marcação)
+        // 5) Rodízio geral (aceite no Standby + marcação manual no cadastro)
         $idsAtivas = array_values(array_map(
             static fn(Empresa $e): string => $e->id,
             array_filter($empresas, static fn(Empresa $e): bool => $e->isAtiva())
         ));
-        $ciclo = (new RodizioService())->cicloAtual($idsAtivas);
+        $idsMarcacaoManual = array_values(array_map(
+            static fn(Empresa $e): string => $e->id,
+            array_filter($empresas, static fn(Empresa $e): bool => $e->isAtiva() && $e->servicoRealizado)
+        ));
+        $ciclo = (new RodizioService())->cicloAtual($idsAtivas, $idsMarcacaoManual);
         $chamadas = array_flip($ciclo['ids']);
+        $marcacaoManual = array_flip($ciclo['idsMarcacaoManual'] ?? []);
 
         $elegiveis = [];
         $eliminadas = [];
@@ -136,6 +149,8 @@ final class EligibilityService
                     'atendeAcima100km' => $empresa->atendeAcima100km,
                     'mesmaCidade' => normalizar_texto($empresa->cidade) === $cidadeDemanda,
                     'emRodizio' => isset($chamadas[$empresa->id]),
+                    'rodizioPorMarcacao' => isset($marcacaoManual[$empresa->id]),
+                    'servicoRealizadoObs' => $empresa->servicoRealizadoObs,
                     'ordemCredenciamento' => $empresa->ordemCredenciamento,
                     'telefone' => $empresa->telefone,
                     'email' => $empresa->email,
@@ -149,6 +164,89 @@ final class EligibilityService
             }
         }
 
+        // 6) Priorização por cidade + margem 100/100 no sorteio automático
+        // Escolha manual: não aplica (lista todas as aptas; rodízio não impede nova escolha)
+        $modoManual = ($demanda->modalidadeSolicitada ?? 'auto') === 'manual';
+        $naCidadeAntes = array_values(array_filter($elegiveis, static fn(array $e): bool => !empty($e['mesmaCidade'])));
+        $priorizacaoCidade = false;
+        $semEmpresasNaCidade = false;
+        $semEmpresasNoLimite = false;
+        $redirecionarManual = false;
+        $mensagemCidade = null;
+
+        if (!$modoManual) {
+            if ($naCidadeAntes === []) {
+                // Nenhuma apta na cidade → não segue sorteio automático
+                $semEmpresasNaCidade = true;
+                $redirecionarManual = true;
+                $mensagemCidade = sprintf(
+                    'Não há credenciadas aptas sediadas em %s. Use a escolha manual para selecionar uma empresa.',
+                    $demanda->cidade
+                );
+                foreach ($elegiveis as $e) {
+                    $e['elegivel'] = false;
+                    $e['motivosEliminacao'][] = $mensagemCidade;
+                    $e['criterios'][] = [
+                        'codigo' => 'prioridade_cidade',
+                        'nome' => 'Prioridade cidade da demanda',
+                        'atendido' => false,
+                        'motivo' => $mensagemCidade,
+                    ];
+                    $eliminadas[] = $e;
+                }
+                $elegiveis = [];
+            } else {
+                // Há empresas na cidade: sorteio só com as da cidade dentro de 200 km ida/volta
+                $priorizacaoCidade = true;
+                $noLimite = [];
+                $foraLimite = [];
+                foreach ($elegiveis as $e) {
+                    if (empty($e['mesmaCidade'])) {
+                        $e['elegivel'] = false;
+                        $motivo = sprintf('Sorteio automático prioriza credenciadas sediadas em %s (dentro de 200 km ida e volta).', $demanda->cidade);
+                        $e['motivosEliminacao'][] = $motivo;
+                        $e['criterios'][] = [
+                            'codigo' => 'prioridade_cidade',
+                            'nome' => 'Prioridade cidade da demanda',
+                            'atendido' => false,
+                            'motivo' => $motivo,
+                        ];
+                        $foraLimite[] = $e;
+                        continue;
+                    }
+                    $ida = $e['distanciaKm'] ?? null;
+                    $idaVolta = $e['idaVoltaKm'] ?? ($ida !== null ? round((float) $ida * 2, 1) : null);
+                    if ($ida === null || $idaVolta === null || $idaVolta > self::LIMITE_IDA_VOLTA_KM) {
+                        $e['elegivel'] = false;
+                        $motivo = sprintf(
+                            'Na cidade da demanda, mas fora da margem de 200 km ida e volta (100+100)%s',
+                            $idaVolta !== null ? ' — ida e volta ' . format_km((float) $idaVolta) : ''
+                        );
+                        $e['motivosEliminacao'][] = $motivo;
+                        $e['criterios'][] = [
+                            'codigo' => 'prioridade_cidade_km',
+                            'nome' => 'Margem 100 km ida + 100 km volta',
+                            'atendido' => false,
+                            'motivo' => $motivo,
+                        ];
+                        $foraLimite[] = $e;
+                        continue;
+                    }
+                    $noLimite[] = $e;
+                }
+                $eliminadas = array_merge($eliminadas, $foraLimite);
+                $elegiveis = $noLimite;
+                if ($elegiveis === []) {
+                    $semEmpresasNoLimite = true;
+                    $redirecionarManual = true;
+                    $mensagemCidade = sprintf(
+                        'Há credenciadas em %s, mas nenhuma dentro de 200 km ida e volta (100+100). Use a escolha manual.',
+                        $demanda->cidade
+                    );
+                }
+            }
+        }
+
         $porDistancia = static fn(array $a, array $b): int
             => [$a['distanciaKm'] === null, $a['distanciaKm'] ?? 0, $a['ordemCredenciamento'] ?? 0]
             <=> [$b['distanciaKm'] === null, $b['distanciaKm'] ?? 0, $b['ordemCredenciamento'] ?? 0];
@@ -158,6 +256,9 @@ final class EligibilityService
         $criteriosUtilizados = array_map(static fn(Criterio $c): string => $c->nome, $criterios);
         if ($restricaoAplicada) {
             $criteriosUtilizados[] = 'Sediada na cidade da demanda';
+        }
+        if ($priorizacaoCidade) {
+            $criteriosUtilizados[] = 'Prioridade: cidade da demanda até 200 km ida e volta';
         }
 
         $fontes = array_values(array_unique(array_filter(array_column($rotas, 'fonte'))));
@@ -174,13 +275,19 @@ final class EligibilityService
                 'provedor' => $this->distanceService->provider(),
                 'fontes' => $fontes,
                 'rotulo' => $this->distanceService->providerLabel($fontes[0] ?? null),
+                'limiteIdaKm' => self::LIMITE_IDA_KM,
                 'limiteIdaVoltaKm' => self::LIMITE_IDA_VOLTA_KM,
             ],
             'cidade' => [
                 'nome' => $demanda->cidade,
-                'aptasNaCidade' => count($naCidade),
+                'aptasNaCidade' => count($naCidadeAntes),
                 'restricaoSolicitada' => $demanda->somenteCidade,
                 'restricaoAplicada' => $restricaoAplicada,
+                'priorizacaoAplicada' => $priorizacaoCidade,
+                'semEmpresasNaCidade' => $semEmpresasNaCidade,
+                'semEmpresasNoLimite' => $semEmpresasNoLimite,
+                'redirecionarManual' => $redirecionarManual,
+                'mensagem' => $mensagemCidade,
             ],
             'rodizio' => [
                 'ciclo' => $ciclo['ciclo'],
@@ -280,7 +387,7 @@ final class EligibilityService
      * @param array{km:?float}|null $rota
      * @return array{0:bool,1:?string}
      */
-    private function checkLimite100km(Empresa $empresa, ?array $rota, bool $jaAprovada): array
+    private function checkLimiteDeslocamento(Empresa $empresa, ?array $rota, bool $jaAprovada): array
     {
         if ($empresa->atendeAcima100km) {
             return [true, null];
@@ -294,7 +401,7 @@ final class EligibilityService
             return [true, null];
         }
         return [false, sprintf(
-            'Atende somente até 100 km ida e volta — rota de carro %s (ida e volta %s)',
+            'Atende somente até 200 km ida e volta (100+100) — rota de carro %s (ida e volta %s)',
             format_km($rota['km']),
             format_km($idaVolta)
         )];

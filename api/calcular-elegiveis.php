@@ -88,7 +88,8 @@ $maisProxima = $comRota[0] ?? null;
 json_response([
     'ok' => true,
     'preview' => $previewOnly,
-    'data' => $previewOnly ? null : $resultado,
+    // Sempre devolve o cálculo; preview só evita gravar o fluxo de sorteio na sessão
+    'data' => $resultado,
     'impacto' => [
         'total' => (int) $resultado['totalAnalisadas'],
         'desativadas' => $contar($eliminadas, 'convenio_ativo'),
@@ -100,6 +101,13 @@ json_response([
         'emRodizio' => (int) $resultado['rodizio']['elegiveisEmRodizio'],
         'aptasNaCidade' => (int) $resultado['cidade']['aptasNaCidade'],
         'restricaoCidade' => (bool) $resultado['cidade']['restricaoAplicada'],
+        'priorizacaoCidade' => (bool) ($resultado['cidade']['priorizacaoAplicada'] ?? false),
+        'semEmpresasNaCidade' => (bool) ($resultado['cidade']['semEmpresasNaCidade'] ?? false),
+        'semEmpresasNoLimite' => (bool) ($resultado['cidade']['semEmpresasNoLimite'] ?? false),
+        'redirecionarManual' => (bool) ($resultado['cidade']['redirecionarManual'] ?? false),
+        'mensagemCidade' => $resultado['cidade']['mensagem'] ?? null,
+        'limiteIdaKm' => (float) ($resultado['distancia']['limiteIdaKm'] ?? 100),
+        'limiteIdaVoltaKm' => (float) ($resultado['distancia']['limiteIdaVoltaKm'] ?? 200),
         'distanciaMedia' => $comRota !== []
             ? round(array_sum(array_column($comRota, 'distanciaKm')) / count($comRota), 1)
             : null,

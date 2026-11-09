@@ -136,6 +136,11 @@ final class CompanyService
             'estadosAtuacao' => $est,
             'estadosAtuacaoCodigos' => $estCodes,
             'atendeAcima100km' => (bool) ($row['atende_acima_100km'] ?? true),
+            'servicoRealizado' => (bool) ($row['servico_realizado'] ?? false),
+            'servicoRealizadoObs' => $row['servico_realizado_obs'] ?? null,
+            'servicoRealizadoEm' => $row['servico_realizado_em'] ?? null,
+            'criadoEm' => $row['criado_em'] ?? null,
+            'atualizadoEm' => $row['atualizado_em'] ?? null,
         ]);
     }
 
@@ -416,6 +421,9 @@ final class CompanyService
             'numeroContrato' => trim((string) ($input['numeroContrato'] ?? '')),
             'ordemCredenciamento' => (int) ($input['ordemCredenciamento'] ?? 0),
             'atendeAcima100km' => filter_var($input['atendeAcima100km'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'servicoRealizado' => filter_var($input['servicoRealizado'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'servicoRealizadoObs' => trim((string) ($input['servicoRealizadoObs'] ?? '')) ?: null,
+            'servicoRealizadoEm' => null,
             'telefone' => trim((string) ($input['telefone'] ?? '')) ?: null,
             'email' => trim((string) ($input['email'] ?? '')) ?: null,
             'responsavel' => trim((string) ($input['responsavel'] ?? '')) ?: null,
@@ -427,6 +435,23 @@ final class CompanyService
         if ($payload['nome'] === '' || $payload['cidade'] === '' || $payload['endereco'] === '') {
             throw new InvalidArgumentException('Nome, cidade e endereço são obrigatórios.');
         }
+
+        if ($payload['servicoRealizado'] && ($payload['servicoRealizadoObs'] === null || $payload['servicoRealizadoObs'] === '')) {
+            throw new InvalidArgumentException('Informe a observação do serviço já realizado (para constar no rodízio).');
+        }
+
+        $anterior = !$isNew ? $this->findById($empresaId) : null;
+        if ($payload['servicoRealizado']) {
+            $payload['servicoRealizadoEm'] = ($anterior && $anterior->servicoRealizado && $anterior->servicoRealizadoEm)
+                ? $anterior->servicoRealizadoEm
+                : date('Y-m-d H:i:s');
+        } else {
+            $payload['servicoRealizadoEm'] = null;
+        }
+
+        $agora = date('Y-m-d H:i:s');
+        $payload['criadoEm'] = ($anterior && $anterior->criadoEm) ? $anterior->criadoEm : $agora;
+        $payload['atualizadoEm'] = $agora;
 
         if ($this->useDb()) {
             $this->saveToDb($payload);
@@ -456,19 +481,28 @@ final class CompanyService
         $pdo = Database::pdo();
         $pdo->beginTransaction();
         try {
+            // criado_em só na inserção; em UPDATE preserva a data original do cadastro
             $sql = 'INSERT INTO empresas (
                 id, nome, cnpj, cidade, uf, endereco, bairro, cep, status, data_convenio,
-                numero_contrato, ordem_credenciamento, atende_acima_100km, telefone, email, responsavel, observacoes, latitude, longitude
+                numero_contrato, ordem_credenciamento, atende_acima_100km,
+                servico_realizado, servico_realizado_obs, servico_realizado_em,
+                telefone, email, responsavel, observacoes, latitude, longitude, criado_em, atualizado_em
             ) VALUES (
                 :id, :nome, :cnpj, :cidade, :uf, :endereco, :bairro, :cep, :status, :data_convenio,
-                :numero_contrato, :ordem_credenciamento, :atende_acima_100km, :telefone, :email, :responsavel, :observacoes, :latitude, :longitude
+                :numero_contrato, :ordem_credenciamento, :atende_acima_100km,
+                :servico_realizado, :servico_realizado_obs, :servico_realizado_em,
+                :telefone, :email, :responsavel, :observacoes, :latitude, :longitude, :criado_em, :atualizado_em
             ) ON DUPLICATE KEY UPDATE
                 nome=VALUES(nome), cnpj=VALUES(cnpj), cidade=VALUES(cidade), uf=VALUES(uf),
                 endereco=VALUES(endereco), bairro=VALUES(bairro), cep=VALUES(cep), status=VALUES(status),
                 data_convenio=VALUES(data_convenio), numero_contrato=VALUES(numero_contrato),
-                ordem_credenciamento=VALUES(ordem_credenciamento), atende_acima_100km=VALUES(atende_acima_100km), telefone=VALUES(telefone),
+                ordem_credenciamento=VALUES(ordem_credenciamento), atende_acima_100km=VALUES(atende_acima_100km),
+                servico_realizado=VALUES(servico_realizado), servico_realizado_obs=VALUES(servico_realizado_obs),
+                servico_realizado_em=VALUES(servico_realizado_em),
+                telefone=VALUES(telefone),
                 email=VALUES(email), responsavel=VALUES(responsavel), observacoes=VALUES(observacoes),
-                latitude=VALUES(latitude), longitude=VALUES(longitude)';
+                latitude=VALUES(latitude), longitude=VALUES(longitude),
+                atualizado_em=VALUES(atualizado_em)';
 
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
@@ -485,12 +519,17 @@ final class CompanyService
                 ':numero_contrato' => $payload['numeroContrato'],
                 ':ordem_credenciamento' => $payload['ordemCredenciamento'],
                 ':atende_acima_100km' => $payload['atendeAcima100km'] ? 1 : 0,
+                ':servico_realizado' => !empty($payload['servicoRealizado']) ? 1 : 0,
+                ':servico_realizado_obs' => $payload['servicoRealizadoObs'],
+                ':servico_realizado_em' => $payload['servicoRealizadoEm'],
                 ':telefone' => $payload['telefone'],
                 ':email' => $payload['email'],
                 ':responsavel' => $payload['responsavel'],
                 ':observacoes' => $payload['observacoes'],
                 ':latitude' => $payload['latitude'],
                 ':longitude' => $payload['longitude'],
+                ':criado_em' => $payload['criadoEm'],
+                ':atualizado_em' => $payload['atualizadoEm'],
             ]);
 
             $pdo->prepare('DELETE FROM empresa_servicos WHERE empresa_id = ?')->execute([$payload['id']]);

@@ -61,6 +61,60 @@ function format_datetime(?string $date, string $format = 'd/m/Y H:i'): string
     return format_date($date, $format);
 }
 
+/**
+ * Horas desde a data/hora do sorteio em standby (null se inválida).
+ */
+function standby_horas_pendente(?string $dataHora): ?float
+{
+    if (!$dataHora) {
+        return null;
+    }
+    $ts = strtotime($dataHora);
+    if ($ts === false) {
+        return null;
+    }
+    return max(0, (time() - $ts) / 3600);
+}
+
+/**
+ * Rotulo amigável: "há 40 min", "há 5 h", "há 2 dias".
+ */
+function standby_tempo_label(?string $dataHora): string
+{
+    $horas = standby_horas_pendente($dataHora);
+    if ($horas === null) {
+        return '—';
+    }
+    if ($horas < 1) {
+        $min = max(1, (int) round($horas * 60));
+        return 'há ' . $min . ' min';
+    }
+    if ($horas < 48) {
+        $h = (int) floor($horas);
+        return 'há ' . $h . ' h';
+    }
+    $dias = (int) floor($horas / 24);
+    return 'há ' . $dias . ' dia' . ($dias === 1 ? '' : 's');
+}
+
+/**
+ * ok (< 24h) | atencao (24–48h) | critico (>= 48h)
+ */
+function standby_urgencia(?string $dataHora): string
+{
+    $horas = standby_horas_pendente($dataHora);
+    if ($horas === null) {
+        return 'ok';
+    }
+    if ($horas >= 48) {
+        return 'critico';
+    }
+    if ($horas >= 24) {
+        return 'atencao';
+    }
+    return 'ok';
+}
+
 function format_km(?float $km): string
 {
     if ($km === null) {
@@ -131,8 +185,9 @@ function modalidade_label(?string $codigo): string
 {
     return match ($codigo) {
         'sorteio' => 'Sorteio com rodízio',
-        'proxima' => 'Mais próxima (preço de edital)',
-        'orcamento' => 'Orçamento entre 3',
+        'proxima' => 'Mais próxima (override manual)',
+        'orcamento' => 'Orçamento entre as 3 mais próximas',
+        'manual' => 'Escolha manual',
         default => 'Sorteio',
     };
 }
@@ -226,20 +281,20 @@ function classificar_eliminacao(array $motivos, ?string $statusEmpresa = null): 
             'legal' => 'Critério de localização do edital — a região da demanda não consta no cadastro da credenciada.',
         ];
     }
-    if (str_contains($texto, '100 km')) {
+    if (str_contains($texto, '200 km') || str_contains($texto, '100 km') || str_contains($texto, '100+100')) {
         return [
             'codigo' => 'limite_km',
-            'label' => 'Acima do Limite de 100 km',
+            'label' => 'Acima do Limite de 200 km',
             'tone' => 'warning',
-            'legal' => 'Credenciada cadastrada para atender só até 100 km ida e volta; a rota de carro até a demanda passa desse limite.',
+            'legal' => 'Credenciada cadastrada para atender só até 200 km ida e volta (100+100); a rota de carro até a demanda passa desse limite.',
         ];
     }
-    if (str_contains($texto, 'sediadas em') || str_contains($texto, 'cidade da demanda')) {
+    if (str_contains($texto, 'sediadas em') || str_contains($texto, 'cidade da demanda') || str_contains($texto, 'Prioriza')) {
         return [
             'codigo' => 'fora_cidade',
             'label' => 'Fora da Cidade da Demanda',
             'tone' => 'info',
-            'legal' => 'Sorteio restrito pelo operador às credenciadas com endereço na cidade da demanda (2 ou mais disponíveis).',
+            'legal' => 'Sorteio automático prioriza credenciadas sediadas na cidade da demanda dentro de 200 km ida e volta; sem aptas na cidade, use a escolha manual.',
         ];
     }
     if (str_contains($texto, 'raio') || str_contains($texto, 'localização') || str_contains($texto, 'localizacao') || str_contains($texto, 'fora do')) {

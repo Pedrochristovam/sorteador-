@@ -10,7 +10,38 @@ $totalSorteios = count($historico);
 $ultimoSorteio = $historico[0] ?? null;
 $ultimos = array_slice($historico, 0, 5);
 $aptidao = $totalEmpresas > 0 ? round(($empresasAtivas / $totalEmpresas) * 100, 1) : 0;
+
+$standbyDash = $drawService->listStandby();
+$standbyDashN = count($standbyDash);
+$standbyDashCrit = 0;
+$standbyDashAten = 0;
+foreach ($standbyDash as $sb) {
+    $u = standby_urgencia($sb['dataHora'] ?? null);
+    if ($u === 'critico') {
+        $standbyDashCrit++;
+    } elseif ($u === 'atencao') {
+        $standbyDashAten++;
+    }
+}
 ?>
+
+<?php if ($standbyDashN > 0): ?>
+  <a class="dash-standby-alert <?= $standbyDashCrit > 0 ? 'is-critico' : ($standbyDashAten > 0 ? 'is-atencao' : '') ?>"
+     href="<?= e(page_url('standby')) ?>">
+    <i data-lucide="<?= $standbyDashCrit > 0 ? 'alert-triangle' : 'hourglass' ?>"></i>
+    <div>
+      <strong>
+        <?= $standbyDashN ?> empresa(s) em Standby aguardando aceite
+        <?php if ($standbyDashCrit > 0): ?>
+          · <?= $standbyDashCrit ?> com mais de 48 h
+        <?php elseif ($standbyDashAten > 0): ?>
+          · <?= $standbyDashAten ?> com mais de 24 h
+        <?php endif; ?>
+      </strong>
+      <span>Abrir Standby para confirmar aceite ou recusa →</span>
+    </div>
+  </a>
+<?php endif; ?>
 
 <div class="dash-hero">
   <div>
@@ -26,6 +57,10 @@ $aptidao = $totalEmpresas > 0 ? round(($empresasAtivas / $totalEmpresas) * 100, 
   <div class="hero-actions">
     <a class="btn btn-outline" href="<?= e(page_url('juridico-dashboard')) ?>">
       <i data-lucide="scale"></i> Ir para Jurídico
+    </a>
+    <a class="btn btn-outline btn-lg" href="<?= e(page_url('escolha-manual')) ?>">
+      <i data-lucide="hand"></i>
+      Escolher manualmente
     </a>
     <a class="btn btn-accent btn-lg" href="<?= e(page_url('novo-sorteio')) ?>">
       <i data-lucide="plus"></i>
